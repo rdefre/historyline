@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(npm install)",
+      "Bash(npx expo start)",
+      "Bash(open http://localhost:8081)",
+      "Bash(npx expo install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm start)",
+      "Bash(npm install:*)",
+      "Bash(npm start:*)",
+      "Bash(claude doctor:*)",
+      "Bash(perl:*)",
+      "Bash(LC_ALL=C grep:*)",
+      "Bash(python3:*)",
+      "Bash(head:*)",
+      "Bash(kill:*)",
+      "Bash(npx expo start --port 8081)",
+      "Bash(claude config set:*)",
+      "Bash(node --version:*)",
+      "Bash(brew list:*)",
+      "Bash(sudo rm:*)",
+      "Bash(chmod:*)",
+      "Bash(bash /Users/rhuantrindade/HistoryLine/remove_node_install_nvm.sh)"
+    ]
+  }
+}
