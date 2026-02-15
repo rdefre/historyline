@@ -2,8 +2,8 @@ import React from 'react';
 import {
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import COLORS from '../constants/colors';
 import { useViewContext } from '../context/ViewContext';
@@ -30,59 +30,70 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
   };
 
   return (
-    <View style={styles.footer}>
-      <TouchableOpacity
-        style={[styles.menuButton, currentView === 'OCCUPATION' && styles.menuButtonActive]}
-        onPress={() => setCurrentView('OCCUPATION')}
-      >
-        <Text style={styles.menuIcon}>{icons.job}</Text>
-        <Text style={styles.menuLabel}>Job</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.menuButton, currentView === 'ASSETS' && styles.menuButtonActive]}
-        onPress={() => setCurrentView('ASSETS')}
-      >
-        <Text style={styles.menuIcon}>{icons.assets}</Text>
-        <Text style={styles.menuLabel}>Assets</Text>
-      </TouchableOpacity>
-
+    <View style={styles.footerWrapper}>
+      {/* AGE BUTTON — Floating above the tab bar */}
       <TouchableOpacity style={styles.centralButton} onPress={handleAgeAndGoToDashboard}>
         <Text style={styles.centralIcon}>{icons.age}</Text>
         <Text style={styles.centralLabel}>AGE</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.menuButton, currentView === 'RELATIONSHIPS' && styles.menuButtonActive]}
-        onPress={() => setCurrentView('RELATIONSHIPS')}
-      >
-        <Text style={styles.menuIcon}>{icons.relations}</Text>
-        <Text style={styles.menuLabel}>Relations</Text>
-      </TouchableOpacity>
+      {/* TAB BAR */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.menuButton, currentView === 'OCCUPATION' && styles.menuButtonActive]}
+          onPress={() => setCurrentView('OCCUPATION')}
+        >
+          <Text style={styles.menuIcon}>{icons.job}</Text>
+          <Text style={styles.menuLabel}>Job</Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.menuButton, currentView === 'ACTIVITIES' && styles.menuButtonActive]}
-        onPress={() => setCurrentView('ACTIVITIES')}
-      >
-        <Text style={styles.menuIcon}>{icons.activities}</Text>
-        <Text style={styles.menuLabel}>Activities</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.menuButton, currentView === 'ASSETS' && styles.menuButtonActive]}
+          onPress={() => setCurrentView('ASSETS')}
+        >
+          <Text style={styles.menuIcon}>{icons.assets}</Text>
+          <Text style={styles.menuLabel}>Assets</Text>
+        </TouchableOpacity>
+
+        {/* Spacer for the floating button */}
+        <View style={styles.centralSpacer} />
+
+        <TouchableOpacity
+          style={[styles.menuButton, currentView === 'RELATIONSHIPS' && styles.menuButtonActive]}
+          onPress={() => setCurrentView('RELATIONSHIPS')}
+        >
+          <Text style={styles.menuIcon}>{icons.relations}</Text>
+          <Text style={styles.menuLabel}>Relations</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.menuButton, currentView === 'ACTIVITIES' && styles.menuButtonActive]}
+          onPress={() => setCurrentView('ACTIVITIES')}
+        >
+          <Text style={styles.menuIcon}>{icons.activities}</Text>
+          <Text style={styles.menuLabel}>Activities</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  footer: {
+  footerWrapper: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    alignItems: 'center',
+  },
+  tabBar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     backgroundColor: COLORS.background.secondary,
     paddingVertical: 8,
     paddingHorizontal: 10,
+    paddingBottom: 20,
     borderTopWidth: 1,
     borderTopColor: COLORS.background.tertiary,
   },
@@ -104,23 +115,27 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     marginTop: 4,
   },
-  centralIcon: {
-    fontSize: 28,
+  centralSpacer: {
+    width: 72,
   },
   centralButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    position: 'absolute',
+    top: -15,
+    zIndex: 10,
+    width: 75,
+    height: 75,
+    borderRadius: 75,
     backgroundColor: COLORS.accent.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 8,
-    marginBottom: 8,
     shadowColor: COLORS.accent.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  centralIcon: {
+    fontSize: 28,
   },
   centralLabel: {
     fontSize: 10,
@@ -129,3 +144,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+

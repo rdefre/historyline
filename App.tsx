@@ -1,32 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
-  ScrollView,
-  Alert,
+  View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import COLORS from './src/constants/colors';
-import type { Character } from './src/types/game.types';
-import { getCurrentEra, didEraChange } from './src/data/eras';
-import { checkHistoricalEvent, type HistoricalEvent } from './src/data/historicalEvents';
-import { getRandomEvent, getSimpleRandomEvent, filterChoicesForAge, SIMPLE_RANDOM_EVENTS, type RandomEvent } from './src/data/randomEvents';
-import type { RandomGameEvent, RandomEventChoice } from './src/types/game.types';
-import { getChildhoodEventByClass, type ChildhoodEvent } from './src/data/childhoodEventsByClass';
-import { getAvatarEmoji, getAgeLabel, generatePhysicalTraits, getPhysicalDescription } from './src/utils/avatar';
-import { generateFamilyBackground, generateNameForClass, getSocialClassIcon, getSocialClassName } from './src/utils/socialClass';
 import FooterMenu from './src/components/FooterMenu';
-import RelationshipsView from './src/components/RelationshipsView';
 import OccupationView from './src/components/OccupationView';
+import RelationshipsView from './src/components/RelationshipsView';
+import COLORS from './src/constants/colors';
+import { getChildhoodEventByClass } from './src/data/childhoodEventsByClass';
+import { didEraChange, getCurrentEra } from './src/data/eras';
+import { checkHistoricalEvent, type HistoricalEvent } from './src/data/historicalEvents';
+import { SIMPLE_RANDOM_EVENTS, filterChoicesForAge, getRandomEvent, type RandomEvent } from './src/data/randomEvents';
+import type { Character, RandomGameEvent } from './src/types/game.types';
+import { generatePhysicalTraits, getAgeLabel, getAvatarEmoji, getPhysicalDescription } from './src/utils/avatar';
+import { generateFamilyBackground, generateNameForClass, getSocialClassIcon, getSocialClassName } from './src/utils/socialClass';
 
 import { EventModal } from './src/components/EventModal';
-import type { SimpleEvent } from './src/types/game.types';
 import { ViewProvider, useViewContext } from './src/context/ViewContext';
-import { generateChatResult } from './src/utils/npcInteractions';
-import { calculateMoneyResult } from './src/utils/moneyInteractions';
+import type { SimpleEvent } from './src/types/game.types';
 import { generateClassmates, generateNewClassmateName } from './src/utils/classmates';
+import { calculateMoneyResult } from './src/utils/moneyInteractions';
+import { generateChatResult } from './src/utils/npcInteractions';
 
 // === LOCALIZAÇÃO FIXA: INGLATERRA (1500) ===
 const STARTING_LOCATION = {
@@ -387,16 +386,16 @@ function AppContent() {
   const startNewLife = () => {
     // Inglaterra como localização fixa
     const location = STARTING_LOCATION;
-    
+
     // Escolhe gênero
     const gender = Math.random() > 0.5 ? 'male' : 'female';
-    
+
     // Gera características físicas permanentes
     const physicalTraits = generatePhysicalTraits();
-    
+
     // Gera background familiar (determina classe social e recursos)
     const familyBg = generateFamilyBackground(gender, '');
-    
+
     // Gera nome apropriado para a classe social
     const { firstName, surname } = generateNameForClass(gender, familyBg.socialClass);
 
@@ -508,8 +507,8 @@ function AppContent() {
         if (age >= 13) {
           const income = char.socialClass === 'nobility' ? 100
             : char.socialClass === 'gentry' ? 50
-            : char.socialClass === 'artisan' ? 20
-            : 5; // peasant
+              : char.socialClass === 'artisan' ? 20
+                : 5; // peasant
           stats.money += income;
 
           // Random expense chance (20%)
@@ -556,8 +555,8 @@ function AppContent() {
         if (age >= 13) {
           const income = char.socialClass === 'nobility' ? 100
             : char.socialClass === 'gentry' ? 50
-            : char.socialClass === 'artisan' ? 20
-            : 5; // peasant
+              : char.socialClass === 'artisan' ? 20
+                : 5; // peasant
           stats.money += income;
 
           // Random expense chance (20%)
@@ -609,8 +608,8 @@ function AppContent() {
         if (age >= 13) {
           const income = char.socialClass === 'nobility' ? 100
             : char.socialClass === 'gentry' ? 50
-            : char.socialClass === 'artisan' ? 20
-            : 5; // peasant
+              : char.socialClass === 'artisan' ? 20
+                : 5; // peasant
           stats.money += income;
 
           // Random expense chance (20%)
@@ -1112,60 +1111,60 @@ function AppContent() {
 
     // Aplicar mudanças
     const updatedChar = { ...character };
-    
+
     if (result.healthChange) {
       updatedChar.health = Math.max(0, Math.min(100, updatedChar.health + result.healthChange));
       if (result.healthChange > 0) addLog(`  ❤️ +${result.healthChange} Vitalidade`);
       else addLog(`  ❤️ ${result.healthChange} Vitalidade`);
     }
-    
+
     if (result.sanityChange) {
       updatedChar.sanity = Math.max(0, Math.min(100, updatedChar.sanity + result.sanityChange));
       if (result.sanityChange > 0) addLog(`  🧠 +${result.sanityChange} Sanidade`);
       else addLog(`  🧠 ${result.sanityChange} Sanidade`);
     }
-    
+
     if (result.honorChange) {
       updatedChar.honor = Math.max(0, Math.min(100, updatedChar.honor + result.honorChange));
       if (result.honorChange > 0) addLog(`  🛡 +${result.honorChange} Honra`);
       else addLog(`  🛡 ${result.honorChange} Honra`);
     }
-    
+
     if (result.intelligenceChange) {
       updatedChar.intelligence = Math.max(0, Math.min(100, updatedChar.intelligence + result.intelligenceChange));
       if (result.intelligenceChange > 0) addLog(`  📖 +${result.intelligenceChange} Inteligência`);
       else addLog(`  📖 ${result.intelligenceChange} Inteligência`);
     }
-    
+
     if (result.faithChange && updatedChar.faith !== undefined) {
       updatedChar.faith = Math.max(0, Math.min(100, updatedChar.faith + result.faithChange));
       if (result.faithChange > 0) addLog(`  ⛪ +${result.faithChange} Fé`);
       else addLog(`  ⛪ ${result.faithChange} Fé`);
     }
-    
+
     if (result.strengthChange && updatedChar.strength !== undefined) {
       updatedChar.strength = Math.max(0, Math.min(100, updatedChar.strength + result.strengthChange));
       if (result.strengthChange > 0) addLog(`  💪 +${result.strengthChange} Força`);
       else addLog(`  💪 ${result.strengthChange} Força`);
     }
-    
+
     if (result.moneyChange) {
       updatedChar.money = Math.max(0, updatedChar.money + result.moneyChange);
       if (result.moneyChange > 0) addLog(`  💰 +$${result.moneyChange}`);
       else addLog(`  💰 -$${Math.abs(result.moneyChange)}`);
     }
-    
+
     if (result.foodChange) {
       updatedChar.food = Math.max(0, updatedChar.food + result.foodChange);
       if (result.foodChange > 0) addLog(`  🍖 +${result.foodChange} Comida`);
       else addLog(`  🍖 ${result.foodChange} Comida`);
     }
-    
+
     if (result.addTrait) {
       updatedChar.traits.push(result.addTrait);
       addLog(`  ✨ Traço adquirido: ${result.addTrait}`);
     }
-    
+
     // Aplicar narrative flags
     if (result.setFlags) {
       updatedChar.narrativeFlags = {
@@ -1319,10 +1318,10 @@ function AppContent() {
         const updatedSiblings =
           npcId !== 'father' && npcId !== 'mother'
             ? prev.siblings.map((s) =>
-                s.id === npcId
-                  ? { ...s, relationship: Math.min(100, s.relationship + result.relationshipChange) }
-                  : s
-              )
+              s.id === npcId
+                ? { ...s, relationship: Math.min(100, s.relationship + result.relationshipChange) }
+                : s
+            )
             : prev.siblings;
 
         return {
@@ -2305,15 +2304,7 @@ function AppContent() {
     <View style={[styles.container, character.health <= 30 && styles.hungerBorder]}>
       <StatusBar style="light" />
 
-      {/* BOTÃO VOLTAR */}
-      {currentView !== 'DASHBOARD' && (
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => { setSelectedCategory(null); setCurrentView('DASHBOARD'); }}
-        >
-          <Text style={styles.backButtonText}>← Voltar</Text>
-        </TouchableOpacity>
-      )}
+
 
       {/* DASHBOARD VIEW */}
       {currentView === 'DASHBOARD' && (
