@@ -252,7 +252,7 @@ export default function OccupationView({
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>💼 Ocupação</Text>
+      {/* Title removed - redundant with SheetHeader */}
 
       {/* ========== SOCIAL CLASS HEADER (ALWAYS ON TOP) ========== */}
       <View style={styles.socialClassCard}>
@@ -757,14 +757,11 @@ export default function OccupationView({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 20,
+    paddingBottom: 40,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
+  // Title style removed
+
 
   // ========== SOCIAL CLASS HEADER (TOP) ==========
   socialClassCard: {
@@ -883,12 +880,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignSelf: 'flex-start',
+    borderRadius: 20,
   },
   backButtonText: {
     fontSize: 14,
     color: COLORS.accent.gold,
     fontWeight: '600',
+    marginLeft: 4,
   },
   detailTitle: {
     fontSize: 18,

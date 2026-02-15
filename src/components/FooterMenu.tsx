@@ -34,7 +34,7 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
       {/* AGE BUTTON — Floating above the tab bar */}
       <TouchableOpacity style={styles.centralButton} onPress={handleAgeAndGoToDashboard}>
         <Text style={styles.centralIcon}>{icons.age}</Text>
-        <Text style={styles.centralLabel}>AGE</Text>
+        <Text style={styles.centralLabel}>IDADE</Text>
       </TouchableOpacity>
 
       {/* TAB BAR */}
@@ -44,7 +44,7 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
           onPress={() => setCurrentView('OCCUPATION')}
         >
           <Text style={styles.menuIcon}>{icons.job}</Text>
-          <Text style={styles.menuLabel}>Job</Text>
+          <Text style={styles.menuLabel}>Ocupação</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -52,7 +52,7 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
           onPress={() => setCurrentView('ASSETS')}
         >
           <Text style={styles.menuIcon}>{icons.assets}</Text>
-          <Text style={styles.menuLabel}>Assets</Text>
+          <Text style={styles.menuLabel}>Posses</Text>
         </TouchableOpacity>
 
         {/* Spacer for the floating button */}
@@ -63,7 +63,7 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
           onPress={() => setCurrentView('RELATIONSHIPS')}
         >
           <Text style={styles.menuIcon}>{icons.relations}</Text>
-          <Text style={styles.menuLabel}>Relations</Text>
+          <Text style={styles.menuLabel}>Relações</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -71,7 +71,7 @@ export default function FooterMenu({ handleAgeUp }: FooterMenuProps) {
           onPress={() => setCurrentView('ACTIVITIES')}
         >
           <Text style={styles.menuIcon}>{icons.activities}</Text>
-          <Text style={styles.menuLabel}>Activities</Text>
+          <Text style={styles.menuLabel}>Atividades</Text>
         </TouchableOpacity>
       </View>
     </View>

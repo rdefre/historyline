@@ -148,7 +148,8 @@ export default function RelationshipsView({ character, setCharacter, onNPCIntera
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>👥 Relacionamentos</Text>
+      {/* Title removed - displayed in SheetHeader */}
+
 
       <Text style={styles.subtitle}>Sua Família</Text>
 
@@ -307,14 +308,11 @@ export default function RelationshipsView({ character, setCharacter, onNPCIntera
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 20,
+    paddingBottom: 40,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
+  // Title style removed
+
   subtitle: {
     fontSize: 14,
     color: COLORS.text.secondary,
