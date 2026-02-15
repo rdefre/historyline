@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
 import {
+  Modal,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
-  ScrollView,
-  Modal,
+  View,
 } from 'react-native';
 import COLORS from '../constants/colors';
 import type { Character } from '../types/game.types';
 
 interface RelationshipsViewProps {
   character: Character;
-  setCharacter: React.Dispatch<React.SetStateAction<Character>>;
+  setCharacter: React.Dispatch<React.SetStateAction<Character | null>>;
   onNPCInteraction: (npcId: string, actionType: 'CHAT' | 'MONEY' | 'HELP_WORK' | 'ASK_TOY' | 'TANTRUM') => void;
-  onAddToLog?: (message: string, type: string) => void;
+  onAddToLog?: (message: string, type: 'neutral' | 'success' | 'fail') => void;
   onSetCurrentEvent?: (event: any) => void;
 }
 

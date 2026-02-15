@@ -12,11 +12,11 @@ import FooterMenu from './src/components/FooterMenu';
 import OccupationView from './src/components/OccupationView';
 import RelationshipsView from './src/components/RelationshipsView';
 import COLORS from './src/constants/colors';
-import { getChildhoodEventByClass } from './src/data/childhoodEventsByClass';
+import { getChildhoodEventByClass, type ChildhoodEvent } from './src/data/childhoodEventsByClass';
 import { didEraChange, getCurrentEra } from './src/data/eras';
 import { checkHistoricalEvent, type HistoricalEvent } from './src/data/historicalEvents';
 import { SIMPLE_RANDOM_EVENTS, filterChoicesForAge, getRandomEvent, type RandomEvent } from './src/data/randomEvents';
-import type { Character, RandomGameEvent } from './src/types/game.types';
+import type { Character, Era, RandomGameEvent } from './src/types/game.types';
 import { generatePhysicalTraits, getAgeLabel, getAvatarEmoji, getPhysicalDescription } from './src/utils/avatar';
 import { generateFamilyBackground, generateNameForClass, getSocialClassIcon, getSocialClassName } from './src/utils/socialClass';
 
@@ -419,7 +419,7 @@ function AppContent() {
       location: location.name,
       birthYear: 1500,
       currentYear: 1500,
-      era: era?.id || 'tudor',
+      era: (era?.id as Era) || 'tudor',
       physicalTraits: physicalTraits,
       socialClass: familyBg.socialClass, // Classe social
       family: {
@@ -663,7 +663,7 @@ function AppContent() {
       logType = 'neutral';
     } else if (choiceId === 'CONFRONT') {
       // Confrontation with potential fight
-      const playerStrength = character.strength || 50;
+      const playerStrength = character?.strength || 50;
       const enemyStrength = Math.floor(Math.random() * 40) + 40;
 
       if (playerStrength > enemyStrength) {
@@ -855,7 +855,7 @@ function AppContent() {
       ...character,
       age: newAge,
       currentYear: newYear,
-      era: getCurrentEra(character.location, newYear)?.id || character.era,
+      era: (getCurrentEra(character.location, newYear)?.id as Era) || character.era,
       family: updatedFamily,
       siblings: updatedSiblings,
     };
@@ -1094,7 +1094,7 @@ function AppContent() {
   };
 
   // === MOSTRAR MODAL DE EVENTO ===
-  const showEventModal = (event: HistoricalEvent | RandomEvent, type: 'historical' | 'random') => {
+  const showEventModal = (event: HistoricalEvent | RandomEvent | ChildhoodEvent, type: 'historical' | 'random' | 'childhood') => {
     setCurrentEvent(event);
     setWaitingForChoice(true);
     addLog(`\n${event.title}`);
@@ -2203,16 +2203,16 @@ function AppContent() {
     }
 
     // === NORMAL ACTIVITY FLOW ===
-    const effects = choice.effects;
+    const effects = choice.effects as Record<string, number> | null;
     setCharacter((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        health: Math.max(0, Math.min(100, prev.health + (effects.health || 0))),
-        strength: Math.max(0, Math.min(100, (prev.strength || 0) + (effects.strength || 0))),
-        faith: Math.max(0, Math.min(100, (prev.faith || 0) + (effects.faith || 0))),
-        honor: Math.max(0, Math.min(100, prev.honor + (effects.honor || 0))),
-        money: Math.max(0, prev.money + (effects.money || 0)),
+        health: Math.max(0, Math.min(100, prev.health + (effects?.health || 0))),
+        strength: Math.max(0, Math.min(100, (prev.strength || 0) + (effects?.strength || 0))),
+        faith: Math.max(0, Math.min(100, (prev.faith || 0) + (effects?.faith || 0))),
+        honor: Math.max(0, Math.min(100, prev.honor + (effects?.honor || 0))),
+        money: Math.max(0, prev.money + (effects?.money || 0)),
         activityHistory: { ...prev.activityHistory, [activity.id]: prev.currentYear },
       };
     });
@@ -2533,7 +2533,7 @@ function AppContent() {
                   key={act.id}
                   style={styles.activityCard}
                   activeOpacity={0.7}
-                  onPress={() => handleActivityPress(act)}
+                  onPress={() => handleActivityPress(act as any)}
                 >
                   <View style={styles.activityHeader}>
                     <Text style={styles.activityLabel}>{act.label}</Text>

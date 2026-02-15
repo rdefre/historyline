@@ -10,35 +10,35 @@ export interface Character {
   surname: string;
   age: number;
   gender: 'male' | 'female';
-  
+
   // Atributos Principais (variam por era)
   health: number;           // Vitalidade (0-100)
   sanity: number;          // Sanidade (0-100)
   honor: number;           // Honra/Reputação (0-100)
   intelligence: number;    // Inteligência (0-100)
-  
+
   // Stats específicos de eras antigas
   faith?: number;          // Fé/Devoção (Era Tudor) (0-100)
   strength?: number;       // Força Física (Era Tudor) (0-100)
-  
+
   // Recursos
   money: number;           // Dinheiro disponível
   food: number;            // Comida (apenas em eras antigas)
-  
+
   // Relacionamentos
   relationships: Relationship[];
-  
+
   // Histórico
   traits: string[];        // Características (Gênio, Doentio, etc)
   profession?: string;     // Profissão atual
   location: string;        // Localização atual
-  
+
   // Aparência Física (definida ao nascer, permanente)
   physicalTraits: {
     hairColor: 'loiro' | 'moreno' | 'ruivo' | 'preto';
     skinTone: 'claro' | 'medio' | 'escuro';
   };
-  
+
   // Classe Social e Família
   socialClass: 'peasant' | 'artisan' | 'gentry' | 'nobility';
   family: {
@@ -56,7 +56,7 @@ export interface Character {
     motherStats?: { vitality: number; faith: number; strength: number; honor: number; money: number };
     isAlive: boolean; // Para eventos de orfandade (ambos mortos)
   };
-  
+
   // Sistema de Narrative Flags (para nexo entre eventos)
   narrativeFlags: {
     isOrphan: boolean;           // Perdeu os pais
@@ -148,13 +148,15 @@ export interface Relationship {
 }
 
 // === ERAS HISTÓRICAS ===
-export type Era = 
-  | 'tribal'           // 1500-1700
-  | 'colonial'         // 1600-1800
-  | 'industrial'       // 1800-1920
-  | 'modern'           // 1920-2000
-  | 'contemporary'     // 2000-2050
-  | 'future';          // 2050-2100
+export type Era =
+  | 'tudor'            // Inglaterra 1500-1699
+  | 'georgian'         // Inglaterra 1700-1849
+  | 'victorian'        // Inglaterra 1850-1919
+  | 'colonial'         // América 1500-1699
+  | 'independence'     // América 1700-1849
+  | 'industrial'       // América 1850-1919
+  | 'modern'           // 1920-1999
+  | 'contemporary';    // 2000-2100
 
 // === EVENTOS SIMPLES (para modais) ===
 export interface SimpleEventChoice {
@@ -198,29 +200,29 @@ export interface GameEvent {
   id: string;
   title: string;
   description: string;
-  
+
   // Condições para aparecer
   minYear?: number;
   maxYear?: number;
   requiredAge?: number;
   requiredTags?: string[];
-  
+
   // Opções disponíveis
   options: EventOption[];
 }
 
 export interface EventOption {
   text: string;
-  
+
   // Custos
   moneyCost?: number;
   foodCost?: number;
-  
+
   // Resultados
   successChance: number;   // 0-100
   successResult: EventResult;
   failureResult?: EventResult;
-  
+
   // Requisitos
   requiredSkill?: {
     type: 'health' | 'sanity' | 'honor' | 'intelligence';
@@ -230,17 +232,17 @@ export interface EventOption {
 
 export interface EventResult {
   message: string;
-  
+
   // Mudanças nos atributos
   healthChange?: number;
   sanityChange?: number;
   honorChange?: number;
   intelligenceChange?: number;
-  
+
   // Mudanças nos recursos
   moneyChange?: number;
   foodChange?: number;
-  
+
   // Consequências especiais
   addTrait?: string;
   removeTrait?: string;
