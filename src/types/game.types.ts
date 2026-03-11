@@ -3,6 +3,26 @@
  * Definições de tipos para todo o jogo
  */
 
+// === GRAVIDEZ PENDENTE ===
+export interface PendingPregnancy {
+  partnerName: string;
+  partnerGender: string;
+  type: 'Legítimo' | 'Bastardo';
+}
+
+// === FILHOS ===
+export interface Child {
+  id: string;
+  name: string;
+  gender: 'Masculino' | 'Feminino';
+  type: 'Legítimo' | 'Bastardo' | 'Adotivo';
+  age: number;
+  relationship: number;
+  health: number;
+  isBaptized: boolean;
+  profession?: string;
+}
+
 // === PERSONAGEM ===
 export interface Character {
   // Informações Básicas
@@ -24,6 +44,20 @@ export interface Character {
   // Recursos
   money: number;           // Dinheiro disponível
   food: number;            // Comida (apenas em eras antigas)
+  partner?: {
+    name: string;
+    gender: 'Masculino' | 'Feminino';
+    status: 'Pretendente' | 'Esposa' | 'Esposo';
+    socialClass: string;
+    age: number;
+    occupation: string;
+    relationship: number; // 0-100 (was relationshipLevel)
+    stats: { vitality: number; strength: number; honor: number; wealth: number };
+  } | null; // Par romântico
+  hasSyphilis?: boolean;
+  birthControlActive?: boolean;
+  pendingPregnancy?: PendingPregnancy | null;
+  devForcePregnancy?: boolean;
 
   // Relacionamentos
   relationships: Relationship[];
@@ -65,8 +99,14 @@ export interface Character {
     lastMajorEvent?: string;     // Último evento importante (para evitar repetição)
   };
 
+  // Filhos
+  children: Child[];
+
   // Rastreamento de eventos já mostrados (evita repetição)
   usedChildhoodEvents: string[];
+  recentEventIds: string[]; // sliding window — últimos N eventos aleatórios
+  partnerActionsThisYear: string[]; // cooldown anual de interações com parceiro(a)
+  childActionsThisYear?: string[]; // cooldown anual de interações com filhos
 
   // Irmãos
   siblings: {
@@ -106,7 +146,12 @@ export interface Character {
   activityHistory: Record<string, number>;
 
   // Inventário de itens
-  inventory: { id: string; name: string; type: string; value?: number; description?: string }[];
+  inventory: MarketItem[];
+  flags?: Record<string, boolean>;
+  maxInventorySlots: number;
+
+  // Inimigos e aliados globais (persistem além do emprego)
+  globalEnemies: GlobalEnemy[];
 
   // Emprego atual
   currentJob?: Job | null;
@@ -115,6 +160,31 @@ export interface Character {
   birthYear: number;       // Ano de nascimento
   currentYear: number;     // Ano atual
   era: Era;               // Era histórica
+}
+
+// === ITEM DE MERCADO / INVENTÁRIO ===
+export interface MarketItem {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  type: 'CONSUMABLE' | 'WEAPON' | 'ARMOR' | 'ASSET' | 'childhood' | 'food';
+  description: string;
+  allowedClasses: string[];
+  statModifiers?: {
+    health?: number;
+    strength?: number;
+    honor?: number;
+    faith?: number;
+    money?: number;
+  };
+  isEquipped?: boolean;
+  upkeepCost?: number;
+  income?: number;
+  slotIncrease?: number;
+  quantity?: number;
+  durability?: number;
+  maxDurability?: number;
 }
 
 // === EMPREGO ===
@@ -136,7 +206,11 @@ export interface Coworker {
   id: string;
   name: string;
   role: string;  // e.g., "Mestre", "Aprendiz", "Supervisor"
+  age: number;          // Current age; incremented each year
+  emoji: string;        // Visual icon displayed in card and sheet header
   relationship: number; // 0-100
+  loyaltyScore: number; // -100 to 100; persists across years
+  strength?: number;    // 0-100; visible in sheet for duel risk evaluation
 }
 
 // === RELACIONAMENTOS ===
@@ -145,6 +219,17 @@ export interface Relationship {
   type: 'father' | 'mother' | 'sibling' | 'spouse' | 'child' | 'friend' | 'enemy';
   relationship: number;    // 0-100 (quanto gosta de você)
   isAlive: boolean;
+}
+
+// === INIMIGOS / ALIADOS GLOBAIS ===
+export interface GlobalEnemy {
+  id: string;
+  name: string;
+  type: 'ENEMY' | 'FRIEND' | 'FAMILY';
+  age: number;
+  emoji: string;
+  strength: number;        // 0-100
+  relationshipLevel: number; // 0-100 (0 = ódio absoluto, 100 = amor)
 }
 
 // === ERAS HISTÓRICAS ===
@@ -164,6 +249,10 @@ export interface SimpleEventChoice {
   text: string;
   preview?: string;
   stats?: { [key: string]: number };
+  /** When true, selecting this choice launches the DuelModal instead of resolving immediately. */
+  triggersDuel?: boolean;
+  /** ID of the coworker who will be the duel opponent. Required when triggersDuel is true. */
+  duelOpponentId?: string;
 }
 
 export interface SimpleEvent {
@@ -248,6 +337,21 @@ export interface EventResult {
   removeTrait?: string;
   death?: boolean;
   gameOver?: boolean;
+}
+
+// === POTENTIAL MATCH ===
+export interface PotentialMatch {
+  name: string;
+  gender: string;
+  age: number;
+  socialClass: string;
+  occupation: string;
+  stats: {
+    vitality: number;
+    strength: number;
+    honor: number;
+    wealth: number;
+  };
 }
 
 // === SAVE/LOAD ===

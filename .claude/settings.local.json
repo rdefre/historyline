@@ -22,7 +22,10 @@
       "Bash(brew list:*)",
       "Bash(sudo rm:*)",
       "Bash(chmod:*)",
-      "Bash(bash /Users/rhuantrindade/HistoryLine/remove_node_install_nvm.sh)"
+      "Bash(bash /Users/rhuantrindade/HistoryLine/remove_node_install_nvm.sh)",
+      "Bash(npx expo:*)",
+      "Bash(pkill:*)",
+      "Bash(open:*)"
     ]
   }
 }

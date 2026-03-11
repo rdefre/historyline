@@ -114,6 +114,26 @@ const getAvailableJobs = (socialClass: string): JobListing[] => {
         faithImpact: 1,
         requirements: { strength: 10 },
       },
+      {
+        id: 'woodcutter',
+        title: 'Lenhador',
+        emoji: '🪓',
+        description: 'Corta e carrega madeira na floresta do senhor, trabalho pesado e perigoso.',
+        income: 6,
+        vitalityImpact: -12,
+        strengthImpact: 3,
+        requirements: { strength: 20 },
+      },
+      {
+        id: 'fisherman',
+        title: 'Pescador',
+        emoji: '🎣',
+        description: 'Lança redes no rio antes do amanhecer. A pesca é incerta, mas alimenta a família.',
+        income: 4,
+        vitalityImpact: -6,
+        faithImpact: 1,
+        requirements: { strength: 15 },
+      },
     ],
     artisan: [
       {
@@ -135,6 +155,46 @@ const getAvailableJobs = (socialClass: string): JobListing[] => {
         vitalityImpact: -8,
         honorImpact: 5,
         requirements: { honor: 50 },
+      },
+      {
+        id: 'blacksmith',
+        title: 'Ferreiro',
+        emoji: '⚒️',
+        description: 'Forja ferramentas e ferraduras. O calor da forja é implacável.',
+        income: 18,
+        vitalityImpact: -10,
+        strengthImpact: 2,
+        requirements: { strength: 40 },
+      },
+      {
+        id: 'weaver',
+        title: 'Tecelão',
+        emoji: '🧶',
+        description: 'Tece tecidos finos para mercadores e pequenos nobres.',
+        income: 14,
+        vitalityImpact: -7,
+        honorImpact: 3,
+        requirements: { honor: 30 },
+      },
+      {
+        id: 'baker',
+        title: 'Padeiro',
+        emoji: '🍞',
+        description: 'Acorda antes do amanhecer para assar pão para a cidade.',
+        income: 12,
+        vitalityImpact: -5,
+        honorImpact: 2,
+        requirements: { honor: 25 },
+      },
+      {
+        id: 'carpenter',
+        title: 'Carpinteiro',
+        emoji: '🪵',
+        description: 'Constrói móveis, vigas e barracas. Muito requisitado na cidade.',
+        income: 16,
+        vitalityImpact: -9,
+        strengthImpact: 1,
+        requirements: { strength: 30 },
       },
     ],
     gentry: [
@@ -158,6 +218,26 @@ const getAvailableJobs = (socialClass: string): JobListing[] => {
         honorImpact: 5,
         requirements: { honor: 50 },
       },
+      {
+        id: 'town_councillor',
+        title: 'Conselheiro da Vila',
+        emoji: '📋',
+        description: 'Representa os interesses da classe média nas assembleias locais.',
+        income: 35,
+        vitalityImpact: -4,
+        honorImpact: 12,
+        requirements: { honor: 65 },
+      },
+      {
+        id: 'tax_collector',
+        title: 'Cobrador de Impostos',
+        emoji: '💰',
+        description: 'Arrecada tributos pelo senhor. Odiado pelo povo, bem pago pelo senhor.',
+        income: 45,
+        vitalityImpact: -5,
+        honorImpact: -5,
+        requirements: { honor: 55 },
+      },
     ],
     nobility: [
       {
@@ -180,6 +260,17 @@ const getAvailableJobs = (socialClass: string): JobListing[] => {
         honorImpact: 12,
         strengthImpact: 5,
         requirements: { honor: 60 },
+      },
+      {
+        id: 'guard_captain',
+        title: 'Capitão da Guarda',
+        emoji: '💂',
+        description: 'Comanda a guarda do castelo. Requer força, honra e sangue frio.',
+        income: 60,
+        vitalityImpact: -8,
+        honorImpact: 15,
+        strengthImpact: 3,
+        requirements: { honor: 65, strength: 50 },
       },
     ],
   };
@@ -369,10 +460,12 @@ export default function OccupationView({
                         activeOpacity={0.7}
                       >
                         <View style={styles.coworkerHeader}>
-                          <Text style={styles.coworkerEmoji}>👤</Text>
+                          <Text style={styles.coworkerEmoji}>{coworker.emoji || '👤'}</Text>
                           <View style={styles.coworkerInfo}>
                             <Text style={styles.coworkerName}>{coworker.name}</Text>
-                            <Text style={styles.coworkerRole}>{coworker.role}</Text>
+                            <Text style={styles.coworkerRole}>
+                              {coworker.role}{coworker.age ? ` · ${coworker.age} anos` : ''}
+                            </Text>
                           </View>
                         </View>
 
@@ -509,10 +602,13 @@ export default function OccupationView({
                 {/* Header */}
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderLeft}>
-                    <Text style={styles.modalEmoji}>👤</Text>
+                    <Text style={styles.modalEmoji}>{selectedCoworker.emoji || '👤'}</Text>
                     <View>
                       <Text style={styles.modalName}>{selectedCoworker.name}</Text>
-                      <Text style={styles.modalRole}>{selectedCoworker.role}</Text>
+                      <Text style={styles.modalRole}>
+                        {selectedCoworker.role}
+                        {selectedCoworker.age ? ` · ${selectedCoworker.age} anos` : ''}
+                      </Text>
                     </View>
                   </View>
                   <TouchableOpacity
@@ -540,46 +636,48 @@ export default function OccupationView({
                   <Text style={styles.modalRelationshipValue}>{selectedCoworker.relationship}%</Text>
                 </View>
 
-                {/* Player Stats */}
+                {/* Coworker Stats */}
                 <View style={styles.modalStatsSection}>
-                  <Text style={styles.modalSectionLabel}>Suas Estatísticas</Text>
+                  <Text style={styles.modalSectionLabel}>Atributos de {selectedCoworker.name}</Text>
                   <View style={styles.modalStatsGrid}>
-                    <View style={styles.modalStatItem}>
-                      <Text style={styles.modalStatLabel}>💰 Moedas</Text>
-                      <Text style={styles.modalStatValue}>{character.money}</Text>
-                    </View>
-                    <View style={styles.modalStatItem}>
-                      <Text style={styles.modalStatLabel}>❤️ Vitalidade</Text>
-                      <View style={styles.modalStatBar}>
-                        <View style={[styles.modalStatBarFill, { width: `${character.health}%` }]} />
-                      </View>
-                      <Text style={styles.modalStatValue}>{character.health}</Text>
-                    </View>
-                    {character.faith !== undefined && (
-                      <View style={styles.modalStatItem}>
-                        <Text style={styles.modalStatLabel}>⛪ Fé</Text>
-                        <View style={styles.modalStatBar}>
-                          <View style={[styles.modalStatBarFill, { width: `${character.faith}%` }]} />
-                        </View>
-                        <Text style={styles.modalStatValue}>{character.faith}</Text>
-                      </View>
-                    )}
-                    {character.strength !== undefined && (
+
+                    {/* Força — always shown; critical for duel risk evaluation */}
+                    {selectedCoworker.strength !== undefined && (
                       <View style={styles.modalStatItem}>
                         <Text style={styles.modalStatLabel}>💪 Força</Text>
                         <View style={styles.modalStatBar}>
-                          <View style={[styles.modalStatBarFill, { width: `${character.strength}%` }]} />
+                          <View
+                            style={[
+                              styles.modalStatBarFill,
+                              { width: `${selectedCoworker.strength}%` as `${number}%` },
+                            ]}
+                          />
                         </View>
-                        <Text style={styles.modalStatValue}>{character.strength}</Text>
+                        <Text style={styles.modalStatValue}>{selectedCoworker.strength}</Text>
                       </View>
                     )}
+
+                    {/* Lealdade — derived from loyaltyScore (-100..100) → bar 0..100 */}
                     <View style={styles.modalStatItem}>
-                      <Text style={styles.modalStatLabel}>🛡 Honra</Text>
+                      <Text style={styles.modalStatLabel}>🤝 Lealdade</Text>
                       <View style={styles.modalStatBar}>
-                        <View style={[styles.modalStatBarFill, { width: `${character.honor}%` }]} />
+                        <View
+                          style={[
+                            styles.modalStatBarFill,
+                            {
+                              width: `${Math.round((selectedCoworker.loyaltyScore + 100) / 2)}%` as `${number}%`,
+                              backgroundColor:
+                                selectedCoworker.loyaltyScore >= 0 ? '#6B8E4E' : '#A13A2F',
+                            },
+                          ]}
+                        />
                       </View>
-                      <Text style={styles.modalStatValue}>{character.honor}</Text>
+                      <Text style={styles.modalStatValue}>
+                        {selectedCoworker.loyaltyScore > 0 ? '+' : ''}
+                        {selectedCoworker.loyaltyScore}
+                      </Text>
                     </View>
+
                   </View>
                 </View>
 
@@ -855,14 +953,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   categoryCard: {
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 12,
     padding: 18,
     borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
+    borderColor: 'rgba(255,255,255,0.08)',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
   },
   categoryLabel: {
     fontSize: 18,

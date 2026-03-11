@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Modal,
   PanResponder,
   Platform,
   ScrollView,
@@ -18,15 +19,19 @@ import COLORS from './src/constants/colors';
 import { getChildhoodEventByClass, type ChildhoodEvent } from './src/data/childhoodEventsByClass';
 import { didEraChange, getCurrentEra } from './src/data/eras';
 import { checkHistoricalEvent, type HistoricalEvent } from './src/data/historicalEvents';
-import { SIMPLE_RANDOM_EVENTS, filterChoicesForAge, getRandomEvent, type RandomEvent } from './src/data/randomEvents';
-import type { Character, Era, RandomGameEvent } from './src/types/game.types';
+import { PEASANT_ADULT_EVENTS, SIMPLE_RANDOM_EVENTS, filterChoicesForAge, getRandomEvent, type RandomEvent } from './src/data/randomEvents';
+import type { Character, Child, Era, GlobalEnemy, PendingPregnancy, RandomGameEvent } from './src/types/game.types';
+import BirthModal from './src/components/BirthModal';
 import { generatePhysicalTraits, getAgeLabel, getAvatarEmoji, getPhysicalDescription } from './src/utils/avatar';
 import { generateFamilyBackground, generateNameForClass, getSocialClassIcon, getSocialClassName } from './src/utils/socialClass';
 
 import { EventModal } from './src/components/EventModal';
+import DuelModal from './src/components/DuelModal';
+import PossesView from './src/components/PossesView';
 import SheetHeader from './src/components/SheetHeader';
 import { ViewProvider, useViewContext } from './src/context/ViewContext';
-import type { SimpleEvent } from './src/types/game.types';
+import type { MarketItem, PotentialMatch, SimpleEvent } from './src/types/game.types';
+import { FIXED_MARKET_ITEMS, MASTER_MARKET_ITEMS } from './src/data/marketItems';
 import { generateClassmates, generateNewClassmateName } from './src/utils/classmates';
 import { calculateMoneyResult } from './src/utils/moneyInteractions';
 import { generateChatResult } from './src/utils/npcInteractions';
@@ -326,9 +331,27 @@ function AppContent() {
 
   // === NPC REACTIVE EVENTS ===
   const [npcEvent, setNpcEvent] = useState<{ isOpen: boolean; coworkerId?: string; coworkerName?: string; eventType?: string; event?: SimpleEvent }>({ isOpen: false });
+  const [duelModal, setDuelModal] = useState<{
+    isVisible: boolean;
+    coworkerId: string;
+    opponentName: string;
+    opponentStrength: number;
+    /** 'coworker' duels update currentJob coworkers; 'enemy' duels update globalEnemies. */
+    sourceType?: 'coworker' | 'enemy';
+    /** Optional per-event callbacks; if absent, handleDuelEnd uses default coworker-duel consequences. */
+    onWin?: () => void;
+    onLose?: () => void;
+  }>({ isVisible: false, coworkerId: '', opponentName: '', opponentStrength: 50 });
+
+  // === MERCADO ===
+  const [currentMarketItems, setCurrentMarketItems] = useState<MarketItem[]>([]);
 
   // === NASCIMENTO DE IRMÃO ===
   const [siblingBirthModal, setSiblingBirthModal] = useState<{ isOpen: boolean; name?: string; gender?: string }>({ isOpen: false });
+
+  // === NASCIMENTO DE FILHO ===
+  const [showBirthModal, setShowBirthModal] = useState(false);
+  const pendingBirthCharRef = useRef<Character | null>(null);
   const pendingEventsCharRef = useRef<Character | null>(null);
 
   // === MINI-GAME ===
@@ -353,6 +376,25 @@ function AppContent() {
       scrollViewRef.current.scrollToEnd({ animated: true });
     }
   }, [gameLog]);
+
+  // === HONOR MILESTONE POPUPS (one-time per generation) ===
+  useEffect(() => {
+    if (!character) return;
+
+    if (character.honor >= 80 && !character.flags?.seenHighHonor) {
+      setCharacter((prev) => prev ? { ...prev, flags: { ...prev.flags, seenHighHonor: true } } : prev);
+      Alert.alert(
+        '🌟 O Herói da Vila',
+        'Sua fama o precede! O líder dos mercadores te cumprimentou. A partir de hoje, você terá 20% de desconto em todas as compras no mercado.'
+      );
+    } else if (character.honor <= 20 && !character.flags?.seenLowHonor) {
+      setCharacter((prev) => prev ? { ...prev, flags: { ...prev.flags, seenLowHonor: true } } : prev);
+      Alert.alert(
+        '👀 A Escória',
+        'Os mercadores cuspiram no chão quando você passou. Eles acham que você é um ladrão e, a partir de hoje, cobrarão 20% a mais por tudo.'
+      );
+    }
+  }, [character?.honor]);
 
   // === GERAR STATS DE NPC ===
   const generateNPCStats = (socialClass: string) => {
@@ -387,6 +429,16 @@ function AppContent() {
   };
 
   // === CRIAR NOVO PERSONAGEM ===
+  // === GERAR ITENS DO MERCADO ===
+  const generateMarketItems = (playerClass: string): MarketItem[] => {
+    const filtered = MASTER_MARKET_ITEMS.filter((item) =>
+      item.allowedClasses.includes(playerClass)
+    );
+    const count = 3 + Math.floor(Math.random() * 2); // 3 or 4
+    const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+  };
+
   const startNewLife = () => {
     // Inglaterra como localização fixa
     const location = STARTING_LOCATION;
@@ -448,16 +500,28 @@ function AppContent() {
         lastMajorEvent: undefined,
       },
       usedChildhoodEvents: [],
+      recentEventIds: [],
+      partnerActionsThisYear: [],
+      childActionsThisYear: [],
+      children: [],
       siblings: [],
       classmates: [],
       eventLog: [{ year: 1500, entries: [] }],
       npcInteractionHistory: [],
       activityHistory: {},
       inventory: [],
+      maxInventorySlots: 5,
+      flags: {},
+      partner: null,
+      hasSyphilis: false,
+      birthControlActive: false,
+      pendingPregnancy: null,
       currentJob: null,
+      globalEnemies: [],
     };
 
     setCharacter(newCharacter);
+    setCurrentMarketItems(generateMarketItems(familyBg.socialClass));
     setGameLog([
       `Nasceu ${firstName} ${surname}, um(a) ${gender === 'male' ? 'menino' : 'menina'}.`,
       `👤 Aparência: ${getPhysicalDescription(physicalTraits)}`,
@@ -645,6 +709,106 @@ function AppContent() {
     const choice = npcEvent.event.choices.find(c => c.id === choiceId);
     if (!choice) return;
 
+    // ── Duel intercept ──────────────────────────────────────────────────────
+    // If the chosen option triggers a duel, dismiss the NPC modal and open
+    // the DuelModal with event-specific win/lose callbacks instead of the
+    // default coworker-duel consequences.
+    if (choice.triggersDuel && choice.duelOpponentId) {
+      const opponentId = choice.duelOpponentId;
+      const opponent = character?.currentJob?.coworkers?.find(c => c.id === opponentId);
+      if (!opponent) return;
+
+      // Apply the relationship/loyalty stats of the confrontation choice immediately
+      // (these fire regardless of duel outcome — the fight already started)
+      const immediateStats = choice.stats || {};
+      if (Object.keys(immediateStats).length > 0) {
+        setCharacter(prev => {
+          if (!prev?.currentJob?.coworkers) return prev;
+          const updatedCoworkers = prev.currentJob.coworkers.map(c =>
+            c.id === opponentId
+              ? {
+                  ...c,
+                  relationship: Math.max(0, Math.min(100, c.relationship + (immediateStats.relationship ?? 0))),
+                  loyaltyScore: Math.max(-100, Math.min(100, (c.loyaltyScore ?? 0) + (immediateStats.loyalty ?? 0))),
+                }
+              : c
+          );
+          return { ...prev, currentJob: { ...prev.currentJob!, coworkers: updatedCoworkers } };
+        });
+      }
+
+      // Dismiss the NPC event modal
+      setNpcEvent({ isOpen: false });
+
+      // Build event-specific duel resolution callbacks based on the choice ID
+      const buildDuelCallbacks = (cId: string): { onWin: () => void; onLose: () => void } => {
+        if (cId === 'GRAIN_CONFRONT') {
+          return {
+            onWin: () => {
+              setCharacter(prev => prev ? { ...prev, honor: Math.min(100, prev.honor + 15) } : prev);
+              addLog(`⚔️ Você enfrentou ${opponent.name} em duelo e provou sua inocência diante do feitor! Sua honra cresceu. (+15 Honra)`);
+              addToEventLog(`Venceu duelo contra ${opponent.name} — acusação de roubo`, 'success');
+            },
+            onLose: () => {
+              setCharacter(prev => prev ? {
+                ...prev,
+                health: Math.max(0, prev.health - 10),
+                honor: Math.max(0, prev.honor - 10),
+              } : prev);
+              addLog(`⚔️ Você foi derrotado por ${opponent.name}. O feitor ficou do lado dele. Você recuou humilhado. (-10 Vitalidade, -10 Honra)`);
+              addToEventLog(`Perdeu duelo contra ${opponent.name} — acusação de roubo`, 'fail');
+            },
+          };
+        }
+        if (cId === 'MATERIALS_CONFRONT') {
+          return {
+            onWin: () => {
+              setCharacter(prev => prev ? { ...prev, honor: Math.min(100, prev.honor + 20) } : prev);
+              addLog(`⚔️ Você derrotou ${opponent.name} e calou as calúnias! O mercado voltou a confiar em você. (+20 Honra)`);
+              addToEventLog(`Venceu duelo contra ${opponent.name} — calúnia no mercado`, 'success');
+            },
+            onLose: () => {
+              setCharacter(prev => prev ? {
+                ...prev,
+                honor: Math.max(0, prev.honor - 15),
+                money: Math.max(0, prev.money - 5),
+              } : prev);
+              addLog(`⚔️ ${opponent.name} te derrotou na frente dos clientes. Sua reputação sofreu e você pagou 5 moedas para encerrar a questão. (-15 Honra, -5 Moedas)`);
+              addToEventLog(`Perdeu duelo contra ${opponent.name} — calúnia no mercado`, 'fail');
+            },
+          };
+        }
+        // CONFRONT (RUMOR_SLANDER) — default
+        return {
+          onWin: () => {
+            setCharacter(prev => prev ? { ...prev, honor: Math.min(100, prev.honor + 15) } : prev);
+            addLog(`⚔️ Você confrontou ${opponent.name} e os rumores foram silenciados pela força da sua lâmina! (+15 Honra)`);
+            addToEventLog(`Venceu duelo contra ${opponent.name} — rumores maliciosos`, 'success');
+          },
+          onLose: () => {
+            setCharacter(prev => prev ? { ...prev, honor: Math.max(0, prev.honor - 20) } : prev);
+            addLog(`⚔️ ${opponent.name} te derrotou. Os rumores se espalharam ainda mais pela cidade. (-20 Honra)`);
+            addToEventLog(`Perdeu duelo contra ${opponent.name} — rumores maliciosos`, 'fail');
+          },
+        };
+      };
+
+      const { onWin, onLose } = buildDuelCallbacks(choiceId);
+
+      setCurrentView('DASHBOARD');
+      setDuelModal({
+        isVisible: true,
+        coworkerId: opponentId,
+        opponentName: opponent.name,
+        opponentStrength: opponent.strength ?? Math.floor(Math.random() * 61) + 30,
+        onWin,
+        onLose,
+      });
+
+      return; // Skip the normal stat-apply flow below
+    }
+    // ── End duel intercept ──────────────────────────────────────────────────
+
     const stats = choice.stats || {};
     let logMessage = '';
     let logType: 'success' | 'fail' | 'neutral' = 'neutral';
@@ -665,21 +829,6 @@ function AppContent() {
     } else if (choiceId === 'TAVERN_NO') {
       logMessage = `🏠 Você recusou o convite de ${npcEvent.coworkerName} e foi direto para casa. Eles pareceram um pouco chateados.`;
       logType = 'neutral';
-    } else if (choiceId === 'CONFRONT') {
-      // Confrontation with potential fight
-      const playerStrength = character?.strength || 50;
-      const enemyStrength = Math.floor(Math.random() * 40) + 40;
-
-      if (playerStrength > enemyStrength) {
-        logMessage = `⚔️ Você confrontou ${npcEvent.coworkerName} pelos rumores. A discussão escalou para uma briga, mas você venceu e forçou uma retratação pública. Sua honra foi restaurada.`;
-        logType = 'success';
-        stats.honor = 10;
-      } else {
-        logMessage = `⚔️ Você tentou confrontar ${npcEvent.coworkerName}, mas perdeu a briga. Os rumores pioraram e sua reputação sofreu ainda mais.`;
-        logType = 'fail';
-        stats.honor = -20;
-        stats.health = -15;
-      }
     } else if (choiceId === 'IGNORE') {
       logMessage = `🙏 Você ignorou os rumores espalhados por ${npcEvent.coworkerName}, confiando que a verdade prevaleceria. Sua fé se fortaleceu, mas alguns ainda acreditam nas mentiras.`;
       logType = 'neutral';
@@ -699,6 +848,98 @@ function AppContent() {
       logMessage = `🚫 Você recusou emprestar dinheiro a ${npcEvent.coworkerName}. Eles pareceram desapontados e se afastaram em silêncio.`;
       logType = 'fail';
     }
+    // === PEASANT NPC EVENTS ===
+    else if (choiceId === 'FIELD_HELP_YES') {
+      logMessage = `🌾 Você ajudou ${npcEvent.coworkerName} a terminar o sulco, mesmo com as mãos doendo. Vocês terminaram o trabalho juntos e você ganhou o respeito da vila.`;
+      logType = 'success';
+    } else if (choiceId === 'FIELD_HELP_NO') {
+      logMessage = `❌ Você negou ajuda a ${npcEvent.coworkerName}. Ele teve que terminar o sulco sozinho, exausto, e não esquecerá isso.`;
+      logType = 'fail';
+    } else if (choiceId === 'ALE_DRINK_YES') {
+      logMessage = `🍶 Você bebeu cidra com ${npcEvent.coworkerName} atrás do celeiro. Boas risadas foram compartilhadas, mas a ressaca da manhã seguinte foi cruel.`;
+      logType = 'success';
+    } else if (choiceId === 'ALE_DRINK_NO') {
+      logMessage = `🚶 Você recusou a cidra de ${npcEvent.coworkerName} e foi para casa. Eles beberam sozinhos, um pouco decepcionados com sua ausência.`;
+      logType = 'neutral';
+    } else if (choiceId === 'GRAIN_IGNORE') {
+      logMessage = `🙄 Você ignorou a acusação de ${npcEvent.coworkerName}. Os rumores persistiram pelo campo e sua honra sofreu perante os outros camponeses.`;
+      logType = 'fail';
+    } else if (choiceId === 'TITHE_GIVE') {
+      if (currentChar && currentChar.money >= 3) {
+        logMessage = `🪙 Você deu 3 moedas a ${npcEvent.coworkerName} para o dízimo da igreja. Sua generosidade foi notada pelos vizinhos e você ganhou o respeito da vila.`;
+        logType = 'success';
+      } else {
+        logMessage = `🪙 Você quis ajudar ${npcEvent.coworkerName}, mas não tinha moedas suficientes. Ele saiu cabisbaixo.`;
+        logType = 'fail';
+        stats.money = 0;
+        stats.relationship = -3;
+        stats.honor = 0;
+      }
+    } else if (choiceId === 'TITHE_DENY') {
+      logMessage = `🚫 Você negou as moedas a ${npcEvent.coworkerName}. Ele guardou rancor e o clima entre vocês ficou pesado nos dias seguintes.`;
+      logType = 'fail';
+    }
+    // === ARTISAN NPC EVENTS ===
+    else if (choiceId === 'APPRENTICE_HELP_YES') {
+      logMessage = `🔨 Você ajudou ${npcEvent.coworkerName} a terminar o entalhe da encomenda real. O trabalho ficou impecável e sua reputação na oficina cresceu.`;
+      logType = 'success';
+    } else if (choiceId === 'APPRENTICE_HELP_NO') {
+      logMessage = `❌ Você negou ajuda a ${npcEvent.coworkerName}. Ele teve que entregar o trabalho incompleto e não esquecerá sua recusa.`;
+      logType = 'fail';
+    } else if (choiceId === 'GUILD_ATTEND_YES') {
+      logMessage = `🦁 Você participou da reunião secreta com ${npcEvent.coworkerName} na Taverna do Leão. Sua reputação na guilda aumentou após a reunião com ${npcEvent.coworkerName}.`;
+      logType = 'success';
+    } else if (choiceId === 'GUILD_ATTEND_NO') {
+      logMessage = `🚪 Você recusou o convite de ${npcEvent.coworkerName} para a reunião da guilda. Sua ausência foi notada pelos membros.`;
+      logType = 'neutral';
+    } else if (choiceId === 'MATERIALS_IGNORE') {
+      logMessage = `🙄 Você ignorou as calúnias de ${npcEvent.coworkerName}. Os rumores se espalharam pelo mercado e sua honra como artesão sofreu um golpe severo.`;
+      logType = 'fail';
+    } else if (choiceId === 'TOOLS_LEND_YES') {
+      if (currentChar && currentChar.money >= 10) {
+        logMessage = `💰 Você emprestou 10 moedas a ${npcEvent.coworkerName} para reparar a ferramenta. Ele não foi expulso da oficina e jurou lealdade a você.`;
+        logType = 'success';
+      } else {
+        logMessage = `💰 Você quis ajudar ${npcEvent.coworkerName}, mas não tinha moedas suficientes. Ele foi expulso da oficina e culpou você pela recusa.`;
+        logType = 'fail';
+        stats.money = 0;
+        stats.relationship = -5;
+        stats.honor = 0;
+      }
+    } else if (choiceId === 'TOOLS_LEND_NO') {
+      logMessage = `🚫 Você negou o empréstimo a ${npcEvent.coworkerName}. Ele foi expulso da oficina e guarda rancor profundo de você.`;
+      logType = 'fail';
+    }
+    // === NEW EVENTS: WORK_ACCIDENT / GOSSIP / EXTRA_SHIFT ===
+    else if (choiceId === 'ACCIDENT_HELP') {
+      logMessage = `🩹 Você rasgou um pedaço da sua camisa e estancou o sangramento de ${npcEvent.coworkerName}. Ele ficará com a cicatriz, mas estará vivo. Toda a vila soube da sua coragem.`;
+      logType = 'success';
+    } else if (choiceId === 'ACCIDENT_IGNORE') {
+      logMessage = `😶 Você fingiu não ver enquanto ${npcEvent.coworkerName} sangrava. A história correu pelo local e os colegas passaram a te ver com outros olhos.`;
+      logType = 'fail';
+    } else if (choiceId === 'GOSSIP_DENY') {
+      logMessage = `📢 Você confrontou o feitor abertamente e desmentiu as acusações. O feitor ficou constrangido. Alguns te respeitam mais; outros ficaram resentidos.`;
+      logType = 'success';
+    } else if (choiceId === 'GOSSIP_BRIBE') {
+      if (currentChar && currentChar.money >= 5) {
+        logMessage = `🪙 Você pagou para ${npcEvent.coworkerName} ficar quieto. O boato morreu antes de se espalhar demais.`;
+        logType = 'neutral';
+      } else {
+        logMessage = `🪙 Você não tinha moedas suficientes para silenciar ${npcEvent.coworkerName}. O boato continuou a se espalhar.`;
+        logType = 'fail';
+        stats.money = 0;
+        stats.relationship = -10;
+      }
+    } else if (choiceId === 'GOSSIP_IGNORE') {
+      logMessage = `🙄 Você deixou os rumores correm. Alguns colegas passaram a te olhar com desconfiança; sua reputação no trabalho ficou estremecida.`;
+      logType = 'fail';
+    } else if (choiceId === 'EXTRA_SHIFT_YES') {
+      logMessage = `🕯️ Você trabalhou a noite toda ao lado de ${npcEvent.coworkerName}, à luz de velas tremeluzentes. A encomenda ficou pronta antes do amanhecer e o feitor elogiou seu esforço.`;
+      logType = 'success';
+    } else if (choiceId === 'EXTRA_SHIFT_NO') {
+      logMessage = `🏠 Você recusou o turno extra e foi para casa. Seus colegas que ficaram resmungaram sobre você no dia seguinte.`;
+      logType = 'neutral';
+    }
 
     // Apply stat changes and get updated character
     let updatedChar: Character | null = null;
@@ -706,12 +947,13 @@ function AppContent() {
     setCharacter(prev => {
       if (!prev || !prev.currentJob || !prev.currentJob.coworkers) return prev;
 
-      // Update coworker relationship
+      // Update coworker relationship and loyalty (loyalty persists across years)
       const updatedCoworkers = prev.currentJob.coworkers.map(c => {
         if (c.id === npcEvent.coworkerId) {
           return {
             ...c,
-            relationship: Math.max(0, Math.min(100, c.relationship + (stats.relationship || 0)))
+            relationship: Math.max(0, Math.min(100, c.relationship + (stats.relationship || 0))),
+            loyaltyScore: Math.max(-100, Math.min(100, (c.loyaltyScore ?? 0) + (stats.loyalty || 0))),
           };
         }
         return c;
@@ -744,9 +986,213 @@ function AppContent() {
     }, 100);
   };
 
+  // === GERAR EVENTOS REATIVOS DE CAMPONÊS ===
+  const generatePeasantCoworkerEvent = (coworker: any, loyaltyScore: number = 0): SimpleEvent | null => {
+    // Weight event pool by loyalty: hostile NPCs trigger more conflict, loyal NPCs help more
+    let pool: string[];
+    if (loyaltyScore < -50) {
+      pool = ['CONFLICT_GRAIN', 'CONFLICT_GRAIN', 'HELP_FIELD', 'MONEY_COINS'];
+    } else if (loyaltyScore > 80) {
+      pool = ['HELP_FIELD', 'HELP_FIELD', 'SOCIAL_ALE', 'MONEY_COINS'];
+    } else {
+      pool = ['HELP_FIELD', 'SOCIAL_ALE', 'CONFLICT_GRAIN', 'MONEY_COINS'];
+    }
+    const eventType = pool[Math.floor(Math.random() * pool.length)];
+
+    switch (eventType) {
+      case 'HELP_FIELD':
+        return {
+          title: '🌾 Sulco no Campo',
+          description: `${coworker.name} está com as mãos sangrando de tanto arar o campo e pediu para você terminar o sulco dele.`,
+          choices: [
+            {
+              id: 'FIELD_HELP_YES',
+              text: '✅ Ajudar',
+              preview: '-15 Vitalidade | +20 Relacionamento',
+              stats: { health: -15, relationship: 20, loyalty: 20 }
+            },
+            {
+              id: 'FIELD_HELP_NO',
+              text: '❌ Negar',
+              preview: '-10 Relacionamento',
+              stats: { relationship: -10, loyalty: -20 }
+            }
+          ]
+        };
+
+      case 'SOCIAL_ALE':
+        return {
+          title: '🍶 Cidra Atrás do Celeiro',
+          description: `${coworker.name} achou uma garrafa de cidra barata e te chamou para beber atrás do celeiro.`,
+          choices: [
+            {
+              id: 'ALE_DRINK_YES',
+              text: '🍶 Beber',
+              preview: '+10 Felicidade | -5 Vitalidade (Ressaca) | +15 Relacionamento',
+              stats: { health: -5, relationship: 15, loyalty: 10 }
+            },
+            {
+              id: 'ALE_DRINK_NO',
+              text: '🚶 Recusar',
+              preview: '-8 Relacionamento',
+              stats: { relationship: -8, loyalty: -10 }
+            }
+          ]
+        };
+
+      case 'CONFLICT_GRAIN':
+        return {
+          title: '⚠️ Acusação de Roubo',
+          description: `${coworker.name} te acusou na frente do feitor de estar roubando punhados de trigo da colheita!`,
+          choices: [
+            {
+              id: 'GRAIN_CONFRONT',
+              text: '⚔️ Confrontar em Duelo',
+              preview: 'Vitória: +15 Honra | Derrota: -10 Vitalidade, -10 Honra',
+              stats: { relationship: -15, loyalty: -15 },
+              triggersDuel: true,
+              duelOpponentId: coworker.id,
+            },
+            {
+              id: 'GRAIN_IGNORE',
+              text: '🙄 Ignorar',
+              preview: '-20 Honra',
+              stats: { honor: -20, loyalty: -5 }
+            }
+          ]
+        };
+
+      case 'MONEY_COINS':
+        return {
+          title: '💰 Dízimo da Igreja',
+          description: `${coworker.name} diz que não tem moedas suficientes para o dízimo da igreja e implora por 3 moedas.`,
+          choices: [
+            {
+              id: 'TITHE_GIVE',
+              text: '🪙 Dar 3 moedas',
+              preview: '-3 💰 | +15 Relacionamento | +5 Honra',
+              stats: { money: -3, relationship: 15, honor: 5, loyalty: 20 }
+            },
+            {
+              id: 'TITHE_DENY',
+              text: '🚫 Negar',
+              preview: '-10 Relacionamento | +Rancor',
+              stats: { relationship: -10, loyalty: -25 }
+            }
+          ]
+        };
+
+      default:
+        return null;
+    }
+  };
+
+  // === GERAR EVENTOS REATIVOS DE ARTESÃO ===
+  const generateArtisanCoworkerEvent = (coworker: any, loyaltyScore: number = 0): SimpleEvent | null => {
+    let pool: string[];
+    if (loyaltyScore < -50) {
+      pool = ['CONFLICT_MATERIALS', 'CONFLICT_MATERIALS', 'HELP_APPRENTICE', 'MONEY_TOOLS'];
+    } else if (loyaltyScore > 80) {
+      pool = ['HELP_APPRENTICE', 'HELP_APPRENTICE', 'SOCIAL_GUILD', 'MONEY_TOOLS'];
+    } else {
+      pool = ['HELP_APPRENTICE', 'SOCIAL_GUILD', 'CONFLICT_MATERIALS', 'MONEY_TOOLS'];
+    }
+    const eventType = pool[Math.floor(Math.random() * pool.length)];
+
+    switch (eventType) {
+      case 'HELP_APPRENTICE':
+        return {
+          title: '🔨 Encomenda Atrasada',
+          description: `${coworker.name} está com uma encomenda real atrasada e o aprendiz dele fugiu. Ele implora que você ajude a terminar o entalhe.`,
+          choices: [
+            {
+              id: 'APPRENTICE_HELP_YES',
+              text: '✅ Ajudar',
+              preview: '-10 Vitalidade | +25 Relacionamento | +10 Honra',
+              stats: { health: -10, relationship: 25, honor: 10, loyalty: 20 }
+            },
+            {
+              id: 'APPRENTICE_HELP_NO',
+              text: '❌ Negar',
+              preview: '-10 Relacionamento',
+              stats: { relationship: -10, loyalty: -20 }
+            }
+          ]
+        };
+
+      case 'SOCIAL_GUILD':
+        return {
+          title: '🦁 Reunião Secreta da Guilda',
+          description: `${coworker.name} te convidou para uma reunião secreta na Taverna do Leão para discutir os novos preços da guilda.`,
+          choices: [
+            {
+              id: 'GUILD_ATTEND_YES',
+              text: '🍺 Participar',
+              preview: '-8 Moedas | +20 Relacionamento | +10 Honra',
+              stats: { money: -8, relationship: 20, honor: 10, loyalty: 15 }
+            },
+            {
+              id: 'GUILD_ATTEND_NO',
+              text: '🚪 Recusar',
+              preview: '-8 Relacionamento',
+              stats: { relationship: -8, loyalty: -10 }
+            }
+          ]
+        };
+
+      case 'CONFLICT_MATERIALS':
+        return {
+          title: '😡 Calúnia no Mercado',
+          description: `${coworker.name} espalhou pelo mercado que você está usando madeira podre e ferro barato em suas criações.`,
+          choices: [
+            {
+              id: 'MATERIALS_CONFRONT',
+              text: '⚔️ Confrontar em Duelo',
+              preview: 'Vitória: +20 Honra | Derrota: -15 Honra, -5 Moedas',
+              stats: { relationship: -15, loyalty: -15 },
+              triggersDuel: true,
+              duelOpponentId: coworker.id,
+            },
+            {
+              id: 'MATERIALS_IGNORE',
+              text: '🙄 Ignorar',
+              preview: '-25 Honra',
+              stats: { honor: -25, loyalty: -5 }
+            }
+          ]
+        };
+
+      case 'MONEY_TOOLS':
+        return {
+          title: '🔧 Ferramenta Quebrada',
+          description: `${coworker.name} quebrou a principal ferramenta de trabalho e pede 10 moedas emprestadas para não ser expulso da oficina.`,
+          choices: [
+            {
+              id: 'TOOLS_LEND_YES',
+              text: '💰 Emprestar 10 moedas',
+              preview: '-10 Moedas | +20 Relacionamento | +5 Honra',
+              stats: { money: -10, relationship: 20, honor: 5, loyalty: 20 }
+            },
+            {
+              id: 'TOOLS_LEND_NO',
+              text: '🚫 Negar',
+              preview: '-10 Relacionamento | +Rancor',
+              stats: { relationship: -10, loyalty: -25 }
+            }
+          ]
+        };
+
+      default:
+        return null;
+    }
+  };
+
   // === GERAR EVENTOS REATIVOS DE COLEGAS ===
   const generateCoworkerReactiveEvent = (coworker: any): SimpleEvent | null => {
-    const eventTypes = ['HELP_REQUEST', 'SOCIAL_INVITE', 'RUMOR_SLANDER', 'MONEY_REQUEST'];
+    const eventTypes = [
+      'HELP_REQUEST', 'SOCIAL_INVITE', 'RUMOR_SLANDER', 'MONEY_REQUEST',
+      'WORK_ACCIDENT', 'GOSSIP', 'EXTRA_SHIFT',
+    ];
     const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
 
     switch (eventType) {
@@ -797,9 +1243,11 @@ function AppContent() {
           choices: [
             {
               id: 'CONFRONT',
-              text: '⚔️ Confrontar e exigir retratação',
-              preview: 'Risco de briga | Pode restaurar Honra ou causar conflito',
-              stats: { relationship: -20 }
+              text: '⚔️ Confrontar em Duelo',
+              preview: 'Vitória: +15 Honra, silencia os rumores | Derrota: -20 Honra',
+              stats: { relationship: -20 },
+              triggersDuel: true,
+              duelOpponentId: coworker.id,
             },
             {
               id: 'IGNORE',
@@ -830,9 +1278,97 @@ function AppContent() {
           ]
         };
 
+      case 'WORK_ACCIDENT':
+        return {
+          title: '🩸 Acidente de Trabalho',
+          description: `Um grito atravessa o local de trabalho. ${coworker.name} cortou a mão com uma ferramenta e está sangrando muito. Os outros colegas se afastam, com medo de se complicar com o feitor.\n\n"Alguém me ajuda, pelo amor de Deus!"`,
+          choices: [
+            {
+              id: 'ACCIDENT_HELP',
+              text: '🩹 Ajudar e estancar o sangramento',
+              preview: '-5 Vitalidade | +25 Relacionamento | +10 Honra',
+              stats: { health: -5, relationship: 25, honor: 10, loyalty: 30 },
+            },
+            {
+              id: 'ACCIDENT_IGNORE',
+              text: '😶 Fingir que não viu',
+              preview: '-15 Honra | -20 Relacionamento',
+              stats: { honor: -15, relationship: -20, loyalty: -30 },
+            },
+          ],
+        };
+
+      case 'GOSSIP':
+        return {
+          title: '🗣️ Fofoca no Local de Trabalho',
+          description: `${coworker.name} te puxa para um canto e sussurra:\n\n"Ouvi dizer que o feitor está planejando reduzir o pagamento de todos. E ainda dizem que foi ${character?.name || 'você'} quem sugeriu a ideia ao senhor para subir de posto..."\n\nAs palavras se espalharam. Os outros colegas te olham de lado.`,
+          choices: [
+            {
+              id: 'GOSSIP_DENY',
+              text: '📢 Desmentir publicamente e enfrentar o feitor',
+              preview: '+15 Honra | -5 Vitalidade (estresse)',
+              stats: { honor: 15, health: -5, loyalty: 10 },
+            },
+            {
+              id: 'GOSSIP_BRIBE',
+              text: '🪙 Pagar 5 moedas para ${coworker.name} silenciar',
+              preview: '-5 💰 | +10 Relacionamento | boato abafado',
+              stats: { money: -5, relationship: 10, loyalty: 5 },
+            },
+            {
+              id: 'GOSSIP_IGNORE',
+              text: '🙄 Ignorar e esperar que passe',
+              preview: '-10 Honra | rumores persistem',
+              stats: { honor: -10, relationship: -5 },
+            },
+          ],
+        };
+
+      case 'EXTRA_SHIFT':
+        return {
+          title: '🌑 Turno Extra Noturno',
+          description: `O feitor chama a todos ainda antes do anoitecer:\n\n"O senhor precisa da encomenda pronta amanhã. Quem ficar esta noite ganha o dobro do dia — mas não terá descanso até o amanhecer."\n\n${coworker.name} já estendeu a mão para pegar a lanterna.`,
+          choices: [
+            {
+              id: 'EXTRA_SHIFT_YES',
+              text: '🕯️ Ficar e trabalhar a noite toda',
+              preview: `-20 Vitalidade | +${Math.floor(Math.random() * 5) + 8} 💰 | +10 Honra (esforço reconhecido)`,
+              stats: { health: -20, money: 10, honor: 10, loyalty: 10 },
+            },
+            {
+              id: 'EXTRA_SHIFT_NO',
+              text: '🏠 Recusar e ir para casa descansar',
+              preview: '-8 Honra | -5 Relacionamento (visto como fraco)',
+              stats: { honor: -8, relationship: -5, loyalty: -5 },
+            },
+          ],
+        };
+
       default:
         return null;
     }
+  };
+
+  // === PROMOVER COLEGA A INIMIGO GLOBAL ===
+  // Returns the same array reference if the coworker is already registered (no mutation).
+  const promoteToEnemy = (
+    current: GlobalEnemy[],
+    id: string,
+    coworker?: { name?: string; age?: number; emoji?: string; strength?: number } | null
+  ): GlobalEnemy[] => {
+    if (!coworker || current.some(e => e.id === id)) return current;
+    return [
+      ...current,
+      {
+        id,
+        name: coworker.name ?? 'Desconhecido',
+        type: 'ENEMY' as const,
+        age: coworker.age ?? 30,
+        emoji: coworker.emoji ?? '😡',
+        strength: coworker.strength ?? 50,
+        relationshipLevel: 0,
+      },
+    ];
   };
 
   // === AVANÇAR IDADE ===
@@ -862,9 +1398,47 @@ function AppContent() {
       era: (getCurrentEra(character.location, newYear)?.id as Era) || character.era,
       family: updatedFamily,
       siblings: updatedSiblings,
+      partnerActionsThisYear: [], // reset do cooldown anual
+      childActionsThisYear: [], // reset do cooldown anual de filhos
+      children: (character.children ?? []).map(c => ({ ...c, age: c.age + 1 })),
     };
 
-    setCharacter(updatedCharacter);
+    // === ASSET UPKEEP & STAT BONUSES ===
+    let charAfterUpkeep = { ...updatedCharacter };
+    const survivingInventory: typeof updatedCharacter.inventory = [];
+    for (const item of updatedCharacter.inventory) {
+      if (item.type === 'ASSET') {
+        // Apply upkeep cost first
+        if (item.upkeepCost && item.upkeepCost > 0) {
+          if (charAfterUpkeep.money < item.upkeepCost) {
+            addLog(`⚠️ Você não conseguiu sustentar seu ${item.name} e o perdeu.`);
+            continue; // drop item
+          }
+          charAfterUpkeep.money -= item.upkeepCost;
+        }
+        // Apply annual stat bonuses
+        if (item.statModifiers) {
+          const m = item.statModifiers;
+          if (m.health)   charAfterUpkeep.health   = Math.min(100, charAfterUpkeep.health + m.health);
+          if (m.strength) charAfterUpkeep.strength  = Math.min(100, (charAfterUpkeep.strength ?? 0) + m.strength);
+          if (m.honor)    charAfterUpkeep.honor     = Math.min(100, charAfterUpkeep.honor + m.honor);
+          if (m.faith)    charAfterUpkeep.faith     = Math.min(100, (charAfterUpkeep.faith ?? 0) + m.faith);
+          if (m.money)    charAfterUpkeep.money     = Math.max(0, charAfterUpkeep.money + m.money);
+        }
+        // Apply passive income
+        if (item.income && item.income > 0) {
+          charAfterUpkeep.money += item.income;
+          addLog(`💰 Seu(Sua) ${item.name} gerou ${item.income} moedas de lucro este ano.`);
+        }
+        survivingInventory.push(item);
+      } else {
+        survivingInventory.push(item);
+      }
+    }
+    charAfterUpkeep.inventory = survivingInventory;
+
+    setCharacter(charAfterUpkeep);
+    setCurrentMarketItems(generateMarketItems(charAfterUpkeep.socialClass));
     addLog(`→ Idade: ${newAge} anos | Ano: ${newYear}`);
 
     // Mostrar mensagens de morte
@@ -957,15 +1531,105 @@ function AppContent() {
         addLog(`  ⛪ Fé ${job.faithImpact > 0 ? 'fortaleceu' : 'enfraqueceu'} em ${Math.abs(job.faithImpact)} pontos.`);
       }
 
+      // === COWORKER AGING & MORTALITY (inside job block, same setCharacter call) ===
+      if (updatedCharacter.currentJob?.coworkers) {
+        const agedCoworkers = updatedCharacter.currentJob.coworkers.map(c => ({
+          ...c,
+          age: (c.age || 30) + 1,
+        }));
+
+        const survivingCoworkers: typeof agedCoworkers = [];
+        let replacementIndex = agedCoworkers.length;
+
+        for (const cw of agedCoworkers) {
+          // Growing mortality chance above 45 — 1500s life expectancy
+          let deathChance = 0;
+          if (cw.age > 65)      deathChance = 0.60;
+          else if (cw.age > 55) deathChance = 0.20;
+          else if (cw.age > 45) deathChance = 0.05;
+
+          if (deathChance > 0 && Math.random() < deathChance) {
+            const cause = cw.age > 55 ? 'faleceu de febre' : 'se aposentou por cansaço';
+            addLog(`👴 Seu colega ${cw.name} ${cause} aos ${cw.age} anos.`);
+            // Replace with a young newcomer so the workplace stays populated
+            survivingCoworkers.push(
+              generateSingleCoworker(updatedCharacter.socialClass, replacementIndex++, true)
+            );
+          } else {
+            survivingCoworkers.push(cw);
+          }
+        }
+
+        updatedCharacter.currentJob = {
+          ...updatedCharacter.currentJob,
+          coworkers: survivingCoworkers,
+        };
+      }
+
       setCharacter(updatedCharacter);
+    }
+
+    // === GLOBAL ENEMIES AGING & MORTALITY ===
+    if ((updatedCharacter.globalEnemies ?? []).length > 0) {
+      const ANGRY_EMOJIS = ['😡', '🗡️', '💀', '😤', '👿', '🔪'];
+      const pickAngryEmoji = () => ANGRY_EMOJIS[Math.floor(Math.random() * ANGRY_EMOJIS.length)];
+
+      const agedEnemies = updatedCharacter.globalEnemies.map(e => ({ ...e, age: e.age + 1 }));
+      const survivingEnemies: typeof agedEnemies = [];
+
+      for (const enemy of agedEnemies) {
+        let deathChance = 0;
+        if (enemy.age > 65)      deathChance = 0.60;
+        else if (enemy.age > 55) deathChance = 0.20;
+        else if (enemy.age > 45) deathChance = 0.05;
+
+        if (deathChance > 0 && Math.random() < deathChance) {
+          // 50% chance to spawn a vengeful heir (Generational Grudge)
+          if (Math.random() < 0.5) {
+            const heirRelation = Math.random() < 0.5 ? 'Filho' : 'Irmão';
+            const heirName = `${heirRelation} de ${enemy.name}`;
+            const heirAge = 16 + Math.floor(Math.random() * 15); // 16–30
+            const heir: GlobalEnemy = {
+              id: `heir_${enemy.id}_${Date.now()}`,
+              name: heirName,
+              type: 'ENEMY',
+              age: heirAge,
+              emoji: enemy.emoji || pickAngryEmoji(),
+              strength: 30 + Math.floor(Math.random() * 51), // 30–80 (young and driven)
+              relationshipLevel: 0,
+            };
+            survivingEnemies.push(heir);
+            const grudgeMsg = `⚰️ Seu inimigo ${enemy.name} morreu aos ${enemy.age} anos, mas em seu leito de morte fez seu herdeiro jurar vingança contra você! ${heirName} agora é seu inimigo.`;
+            addLog(grudgeMsg);
+            addToEventLog(grudgeMsg, 'fail');
+          } else {
+            // Peaceful death — no heir
+            const peaceMsg = `⚰️ Seu inimigo ${enemy.name} morreu de velhice aos ${enemy.age} anos. Você finalmente tem paz.`;
+            addLog(peaceMsg);
+            addToEventLog(peaceMsg, 'neutral');
+          }
+        } else {
+          survivingEnemies.push(enemy);
+        }
+      }
+
+      updatedCharacter.globalEnemies = survivingEnemies;
+      setCharacter({ ...updatedCharacter });
     }
 
     // === NPC REACTIVE EVENTS (COWORKERS) ===
     // 20% chance for each coworker to trigger a reactive event
     if (updatedCharacter.currentJob && updatedCharacter.currentJob.coworkers && updatedCharacter.currentJob.coworkers.length > 0) {
       for (const coworker of updatedCharacter.currentJob.coworkers) {
-        if (Math.random() < 0.20) { // 20% chance
-          const reactiveEvent = generateCoworkerReactiveEvent(coworker);
+        const loyalty = coworker.loyaltyScore ?? 0;
+        // Hostile NPCs (loyalty < -50) have a 50% chance; normal is 20%
+        const triggerChance = loyalty < -50 ? 0.50 : 0.20;
+        if (Math.random() < triggerChance) {
+          const reactiveEvent = updatedCharacter.socialClass === 'peasant'
+            ? generatePeasantCoworkerEvent(coworker, loyalty)
+            : updatedCharacter.socialClass === 'artisan'
+              ? generateArtisanCoworkerEvent(coworker, loyalty)
+              : generateCoworkerReactiveEvent(coworker);
           if (reactiveEvent) {
             // Store the event and coworker info
             setNpcEvent({
@@ -980,6 +1644,62 @@ function AppContent() {
           }
         }
       }
+    }
+
+    // === PROMOÇÃO POR MESTRE/CHEFE ===
+    // If a Mestre/Chefe has relationship > 90, they offer the player a better job
+    if (updatedCharacter.currentJob?.coworkers && (updatedCharacter.socialClass === 'peasant' || updatedCharacter.socialClass === 'artisan')) {
+      const masterRoles = ['Mestre', 'Mestre Artesão', 'Chefe'];
+      const masterWithHighRelation = updatedCharacter.currentJob.coworkers.find(
+        c => masterRoles.includes(c.role) && c.relationship > 90
+      );
+
+      if (masterWithHighRelation) {
+        const promotionMap: Record<string, { id: string; title: string; emoji: string; income: number; vitalityImpact: number; strengthImpact?: number; honorImpact?: number; faithImpact?: number } | null> = {
+          // Peasant progression
+          shepherd:     { id: 'field_plower',   title: 'Lavrador de Campo',    emoji: '🌾', income: 5,  vitalityImpact: -10, strengthImpact: 2 },
+          field_plower: null, // Top peasant tier
+          // Artisan progression
+          market_trader: { id: 'craft_officer', title: 'Oficial de Ofício',    emoji: '🔨', income: 12, vitalityImpact: -8,  honorImpact: 5 },
+          craft_officer: null, // Top artisan tier
+        };
+
+        const nextJob = promotionMap[updatedCharacter.currentJob.id];
+        if (nextJob) {
+          // Check player meets requirements for next job
+          const meetsReq = nextJob.id === 'field_plower'
+            ? (updatedCharacter.strength ?? 0) >= 30
+            : nextJob.id === 'craft_officer'
+              ? updatedCharacter.honor >= 50
+              : true;
+
+          if (meetsReq) {
+            const promotedCoworkers = generateCoworkers(nextJob.title, updatedCharacter.socialClass);
+            const promotedJob = { ...nextJob, coworkers: promotedCoworkers };
+
+            const charAfterPromotion = { ...updatedCharacter, currentJob: promotedJob };
+            setCharacter(charAfterPromotion);
+
+            addLog(`\n🌟 ==== PROMOÇÃO ====`);
+            addLog(`Seu mestre ${masterWithHighRelation.name} está impressionado com sua lealdade e te ofereceu o cargo de ${nextJob.emoji} ${nextJob.title}!`);
+            addLog(`Sua dedicação foi reconhecida. Você começa imediatamente no novo posto.`);
+            addLog(`===================\n`);
+            addToEventLog(`Promovido a ${nextJob.title} por ${masterWithHighRelation.name}`, 'success');
+
+            // Continue event check with the updated character
+            checkForEvents(charAfterPromotion);
+            return;
+          }
+        }
+      }
+    }
+
+    // === NASCIMENTO DE FILHO (gravidez pendente) ===
+    if (updatedCharacter.pendingPregnancy) {
+      setCharacter(updatedCharacter);
+      pendingBirthCharRef.current = updatedCharacter;
+      setShowBirthModal(true);
+      return;
     }
 
     // === NASCIMENTO DE IRMÃO ===
@@ -1039,28 +1759,34 @@ function AppContent() {
       }
     }
 
-    // 3. Eventos Aleatórios da Era
+    // 3. Eventos Aleatórios da Era (30% de chance de um evento temático da era)
     const era = getCurrentEra(char.location, char.currentYear);
-    if (era) {
-      const randomEvent = getRandomEvent(era.tags, char.age);
+    if (era && Math.random() < 0.30) {
+      const randomEvent = getRandomEvent(era.tags, char.age, char.recentEventIds);
       if (randomEvent) {
-        // Verifica condições adicionais do evento
+        let passesConditions = true;
         if (randomEvent.conditions) {
           const { gender, minMoney } = randomEvent.conditions;
-          if (gender && char.gender !== gender) return continueNormalYear();
-          if (minMoney && char.money < minMoney) return continueNormalYear();
+          if (gender && char.gender !== gender) passesConditions = false;
+          if (minMoney && char.money < minMoney) passesConditions = false;
         }
-        // Filtra opções de trabalho para crianças pequenas
-        const filteredEvent = {
-          ...randomEvent,
-          options: filterChoicesForAge(randomEvent.options, char.age),
-        };
-        showEventModal(filteredEvent, 'random');
-        return;
+        if (passesConditions) {
+          const RECENT_MEMORY = 15;
+          setCharacter((prev) => prev ? {
+            ...prev,
+            recentEventIds: [...prev.recentEventIds, randomEvent.id].slice(-RECENT_MEMORY),
+          } : prev);
+          const filteredEvent = {
+            ...randomEvent,
+            options: filterChoicesForAge(randomEvent.options, char.age),
+          };
+          showEventModal(filteredEvent, 'random');
+          return;
+        }
       }
     }
 
-    // 4. Nada aconteceu
+    // 4. Evento aleatório do pool principal (sempre executa se nada acima disparou)
     continueNormalYear();
   };
 
@@ -1072,11 +1798,21 @@ function AppContent() {
     }
 
     if (Math.random() < 1.0) {
-      // Filtra eventos válidos para idade e classe
-      const availableEvents = SIMPLE_RANDOM_EVENTS.filter((event) => {
+      // Combina pool base com pool adulto de camponeses (quando aplicável)
+      const isAdultPeasant = character.age >= 13 && character.socialClass === 'peasant';
+      const eventPool = isAdultPeasant
+        ? [...SIMPLE_RANDOM_EVENTS, ...PEASANT_ADULT_EVENTS]
+        : SIMPLE_RANDOM_EVENTS;
+
+      const RECENT_MEMORY = 15;
+      const recentSet = new Set(character.recentEventIds);
+
+      // Filtra eventos válidos para idade, classe e memória recente
+      const availableEvents = eventPool.filter((event) => {
         if (event.minAge && character.age < event.minAge) return false;
         if (event.maxAge && character.age > event.maxAge) return false;
         if (event.socialClasses && !event.socialClasses.includes(character.socialClass)) return false;
+        if (recentSet.has(event.id)) return false;
         return true;
       });
 
@@ -1087,6 +1823,14 @@ function AppContent() {
       const randomEvent = availableEvents.length > 0
         ? availableEvents[Math.floor(Math.random() * availableEvents.length)]
         : fallback;
+
+      // Atualiza o sliding window (não registra o fallback)
+      if (randomEvent.id !== 'baby_calm' && randomEvent.id !== 'fallback') {
+        setCharacter((prev) => prev ? {
+          ...prev,
+          recentEventIds: [...prev.recentEventIds, randomEvent.id].slice(-RECENT_MEMORY),
+        } : prev);
+      }
 
       setSimpleEvent(randomEvent);
       setWaitingForChoice(true);
@@ -1108,6 +1852,15 @@ function AppContent() {
   // === ESCOLHER OPÇÃO DO EVENTO ===
   const chooseOption = (option: any) => {
     if (!character) return;
+
+    // Duel intercept — open DuelModal instead of resolving instantly
+    if (option.triggersDuel) {
+      setCurrentEvent(null);
+      setWaitingForChoice(false);
+      const opponentStrength = Math.floor(Math.random() * 51) + 30; // 30–80
+      setDuelModal({ isVisible: true, opponentName: 'Desafiante', opponentStrength });
+      return;
+    }
 
     const { result } = option;
     addLog(`→ ${option.text}`);
@@ -1415,7 +2168,7 @@ function AppContent() {
           if (!prev) return prev;
           return {
             ...prev,
-            inventory: [...prev.inventory, { id: `${toy.id}_${Date.now()}`, name: toy.name, type: 'childhood' }],
+            inventory: [...prev.inventory, { id: `${toy.id}_${Date.now()}`, name: toy.name, emoji: '🧸', price: 0, type: 'childhood' as const, description: 'Brinquedo de infância.', allowedClasses: [] }],
           };
         });
       }
@@ -1456,42 +2209,56 @@ function AppContent() {
   };
 
   // === GERAR COLEGAS DE TRABALHO ===
-  const generateCoworkers = (jobTitle: string, socialClass: string): any[] => {
-    const maleNames = ['Thomas', 'William', 'John', 'Richard', 'Henry', 'Robert', 'Edward'];
-    const femaleNames = ['Mary', 'Elizabeth', 'Anne', 'Margaret', 'Catherine', 'Alice'];
-    const surnames = ['o Veterano', 'o Jovem', 'da Cidade', 'do Campo', 'o Sábio', 'o Forte'];
 
-    const roles: Record<string, string[]> = {
-      peasant: ['Mestre', 'Veterano', 'Aprendiz'],
-      artisan: ['Mestre Artesão', 'Supervisor', 'Companheiro'],
-      gentry: ['Conselheiro Sênior', 'Colega Administrador', 'Assistente'],
-      nobility: ['Nobre Veterano', 'Cortesão', 'Cavaleiro'],
+  // Shared name/role/emoji pools
+  const COWORKER_NAMES = {
+    male: ['Thomas', 'William', 'John', 'Richard', 'Henry', 'Robert', 'Edward', 'Walter', 'Geoffrey', 'Hugh'],
+    female: ['Mary', 'Elizabeth', 'Anne', 'Margaret', 'Catherine', 'Alice', 'Agnes', 'Joan', 'Eleanor'],
+    surnames: ['o Veterano', 'o Jovem', 'da Cidade', 'do Campo', 'o Sábio', 'o Forte', 'da Margem', 'o Calado', 'dos Montes'],
+  };
+
+  const COWORKER_ROLES: Record<string, string[]> = {
+    peasant:   ['Mestre de Campo', 'Veterano', 'Aprendiz', 'Colhedor', 'Servente'],
+    artisan:   ['Mestre Artesão', 'Supervisor', 'Companheiro', 'Aprendiz', 'Ajudante'],
+    gentry:    ['Conselheiro Sênior', 'Colega Administrador', 'Assistente', 'Escriba'],
+    nobility:  ['Nobre Veterano', 'Cortesão', 'Cavaleiro', 'Escudeiro', 'Conselheiro'],
+  };
+
+  const COWORKER_EMOJIS: Record<string, string[]> = {
+    peasant:   ['👨‍🌾', '👩‍🌾', '🧑‍🌾', '👴', '👵', '🧑‍🦱'],
+    artisan:   ['🧑‍🔧', '👩‍🍳', '🧑‍🏭', '👨‍🔧', '🧑‍🎨', '👩‍🔬'],
+    gentry:    ['👔', '🧑‍💼', '👩‍💼', '📜', '🧑‍⚖️', '👨‍💼'],
+    nobility:  ['💂‍♂️', '⚔️', '🎖️', '💂‍♀️', '🧑‍✈️', '👑'],
+  };
+
+  /** Create one fresh coworker — used both during hire and as a mortality replacement. */
+  const generateSingleCoworker = (socialClass: string, index: number, young = false): any => {
+    const isMan = Math.random() > 0.5;
+    const firstName = isMan
+      ? COWORKER_NAMES.male[Math.floor(Math.random() * COWORKER_NAMES.male.length)]
+      : COWORKER_NAMES.female[Math.floor(Math.random() * COWORKER_NAMES.female.length)];
+    const suffix = COWORKER_NAMES.surnames[Math.floor(Math.random() * COWORKER_NAMES.surnames.length)];
+    const roles  = COWORKER_ROLES[socialClass]  || COWORKER_ROLES.peasant;
+    const emojis = COWORKER_EMOJIS[socialClass] || COWORKER_EMOJIS.peasant;
+
+    return {
+      id: `coworker_${Date.now()}_${index}_${Math.random().toString(36).slice(2)}`,
+      name: `${firstName} ${suffix}`,
+      role: roles[index % roles.length],
+      emoji: emojis[Math.floor(Math.random() * emojis.length)],
+      age: young
+        ? Math.floor(Math.random() * 8) + 16   // 16-23 — fresh hire
+        : Math.floor(Math.random() * 40) + 16,  // 16-55 — normal hire
+      relationship: 50,
+      loyaltyScore: 0,
+      strength: Math.floor(Math.random() * 61) + 30,
     };
+  };
 
-    const jobRoles = roles[socialClass] || roles.peasant;
-    const coworkers = [];
-
-    // Generate 2-3 coworkers randomly
-    const numberOfCoworkers = Math.floor(Math.random() * 2) + 2; // Random: 2 or 3
-
-    for (let i = 0; i < numberOfCoworkers; i++) {
-      const isMan = Math.random() > 0.5;
-      const firstName = isMan
-        ? maleNames[Math.floor(Math.random() * maleNames.length)]
-        : femaleNames[Math.floor(Math.random() * femaleNames.length)];
-      const suffix = surnames[Math.floor(Math.random() * surnames.length)];
-      const name = `${firstName} ${suffix}`;
-      const role = jobRoles[i % jobRoles.length];
-
-      coworkers.push({
-        id: `coworker_${Date.now()}_${i}`,
-        name,
-        role,
-        relationship: 50, // Neutral starting relationship
-      });
-    }
-
-    return coworkers;
+  const generateCoworkers = (_jobTitle: string, socialClass: string): any[] => {
+    // Crowded workplace: 4-7 coworkers
+    const count = Math.floor(Math.random() * 4) + 4;
+    return Array.from({ length: count }, (_, i) => generateSingleCoworker(socialClass, i));
   };
 
   // === ACEITAR EMPREGO ===
@@ -1694,51 +2461,21 @@ function AppContent() {
         }
         break;
 
-      case 'DUEL':
-        const playerStrength = character.strength || 50;
-        const enemyStrength = Math.floor(Math.random() * 60) + 30;
-        const strengthDiff = playerStrength - enemyStrength;
-
-        if (strengthDiff > 20) {
-          // Victory
-          honorChange = 20;
-          healthChange = -15;
-          relationshipChange = -100;
-          logMessage = `⚔️ Você desafiou ${coworker.name} para um duelo e venceu! Sua honra aumentou, mas você foi ferido.`;
-          logType = 'success';
-        } else if (strengthDiff > 0) {
-          // Close victory
-          honorChange = 10;
-          healthChange = -30;
-          relationshipChange = -100;
-          logMessage = `⚔️ Você venceu o duelo contra ${coworker.name}, mas foi uma batalha brutal. Você está gravemente ferido.`;
-          logType = 'neutral';
-        } else if (strengthDiff > -20) {
-          // Narrow defeat
-          honorChange = -15;
-          healthChange = -40;
-          relationshipChange = -100;
-          logMessage = `⚔️ Você perdeu o duelo contra ${coworker.name}. Você está seriamente ferido e sua honra foi manchada.`;
-          logType = 'fail';
-        } else {
-          // Decisive defeat - risk of death
-          const survivalChance = Math.random();
-          if (survivalChance > 0.3) {
-            honorChange = -20;
-            healthChange = -60;
-            relationshipChange = -100;
-            logMessage = `⚔️ Você foi brutalmente derrotado por ${coworker.name}. Você quase morreu e mal consegue se mover.`;
-            logType = 'fail';
-          } else {
-            // TODO: Handle character death
-            healthChange = -80;
-            honorChange = -30;
-            relationshipChange = -100;
-            logMessage = `⚔️ ${coworker.name} te derrotou no duelo. Você está à beira da morte.`;
-            logType = 'fail';
-          }
-        }
-        break;
+      case 'DUEL': {
+        // Close the sheet so its overlay doesn't sit above the DuelModal.
+        setCurrentView('DASHBOARD');
+        // Use the coworker's stored strength (set at hire time) for consistency
+        // with what the player sees in the coworker sheet.
+        const opponentStrength = coworker.strength ?? Math.floor(Math.random() * 61) + 30;
+        setDuelModal({
+          isVisible: true,
+          coworkerId: coworkerId,
+          opponentName: coworker.name,
+          opponentStrength,
+        });
+        // Skip the normal stat-apply block – outcome handled by handleDuelEnd callback.
+        return;
+      }
 
       default:
         logMessage = `Ação desconhecida: ${actionType}`;
@@ -1759,14 +2496,48 @@ function AppContent() {
         return c;
       });
 
+      // Promote coworker to global enemy if relationship dropped to 0
+      const updatedCoworker = updatedCoworkers.find(c => c.id === coworkerId);
+      let updatedGlobalEnemies = prev.globalEnemies ?? [];
+      if (
+        updatedCoworker &&
+        updatedCoworker.relationship === 0 &&
+        !updatedGlobalEnemies.some(e => e.id === coworkerId)
+      ) {
+        const newEnemy: GlobalEnemy = {
+          id: coworkerId,
+          name: updatedCoworker.name,
+          type: 'ENEMY',
+          age: updatedCoworker.age ?? 30,
+          emoji: updatedCoworker.emoji ?? '😡',
+          strength: updatedCoworker.strength ?? 50,
+          relationshipLevel: 0,
+        };
+        updatedGlobalEnemies = [...updatedGlobalEnemies, newEnemy];
+        // Log is added outside so we capture it post-render
+      }
+
       return {
         ...prev,
         currentJob: { ...prev.currentJob, coworkers: updatedCoworkers },
         health: Math.max(0, Math.min(100, prev.health + healthChange)),
         honor: Math.max(0, Math.min(100, prev.honor + honorChange)),
         money: Math.max(0, prev.money + moneyChange),
+        globalEnemies: updatedGlobalEnemies,
       };
     });
+
+    // Check if this action created a new enemy (relationship would be 0)
+    const currentCoworker = character.currentJob?.coworkers?.find(c => c.id === coworkerId);
+    if (
+      currentCoworker &&
+      Math.max(0, currentCoworker.relationship + relationshipChange) === 0 &&
+      !(character.globalEnemies ?? []).some(e => e.id === coworkerId)
+    ) {
+      const enemyMsg = `🩸 O ódio de ${currentCoworker.name} ferveu. Ele agora é seu inimigo declarado!`;
+      addLog(enemyMsg);
+      addToEventLog(enemyMsg, 'fail');
+    }
 
     // Add log entry
     addLog(logMessage);
@@ -1774,6 +2545,221 @@ function AppContent() {
 
     // Return to dashboard
     setCurrentView('DASHBOARD');
+  };
+
+  // === RESOLUÇÃO DO DUELO (callback do DuelModal) ===
+  // === DURABILIDADE APÓS DUELO ===
+  const applyDuelDurability = () => {
+    setCharacter(prev => {
+      if (!prev) return prev;
+      let updated = { ...prev };
+      const newInventory: typeof prev.inventory = [];
+
+      for (const item of prev.inventory) {
+        if ((item.type !== 'WEAPON' && item.type !== 'ARMOR') || !item.isEquipped) {
+          newInventory.push(item);
+          continue;
+        }
+        const newDur = (item.durability ?? 1) - 1;
+        if (newDur <= 0) {
+          // Revert stat modifiers
+          const mods = item.statModifiers ?? {};
+          if (mods.health)   updated.health   = Math.max(0, (updated.health ?? 0) - mods.health);
+          if (mods.strength) updated.strength = Math.max(0, (updated.strength ?? 0) - mods.strength);
+          if (mods.honor)    updated.honor    = Math.max(0, (updated.honor ?? 0) - mods.honor);
+          if (mods.faith)    updated.faith    = Math.max(0, (updated.faith ?? 0) - mods.faith);
+          addLog(`💥 Seu(Sua) ${item.name} quebrou após o duelo e foi perdido(a)!`);
+          // Do not push — item is gone
+        } else {
+          newInventory.push({ ...item, durability: newDur });
+        }
+      }
+
+      updated.inventory = newInventory;
+      return updated;
+    });
+  };
+
+  const handleDuelEnd = (result: 'win' | 'lose') => {
+    if (!character) return;
+
+    // Capture values immediately — avoids stale-closure reads after setDuelModal.
+    const resolvedOpponentName = duelModal.opponentName;
+    const resolvedCoworkerId = duelModal.coworkerId;
+    const resolvedSourceType = duelModal.sourceType ?? 'coworker';
+    const customOnWin = duelModal.onWin;
+    const customOnLose = duelModal.onLose;
+
+    setDuelModal(prev => ({ ...prev, isVisible: false, onWin: undefined, onLose: undefined }));
+
+    // === ENEMY DUEL (from RelationsView) ===
+    if (resolvedSourceType === 'enemy') {
+      if (result === 'win') {
+        const winMsg = `⚔️ Você venceu o duelo e derrotou seu inimigo ${resolvedOpponentName}! Ele foi humilhado e não mais o ameaça.`;
+        addLog(winMsg);
+        addToEventLog(winMsg, 'success');
+        setCharacter(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            health: Math.max(0, Math.min(100, prev.health - 10)),
+            honor: Math.max(0, Math.min(100, prev.honor + 25)),
+            globalEnemies: (prev.globalEnemies ?? []).filter(e => e.id !== resolvedCoworkerId),
+          };
+        });
+      } else {
+        const loseMsg = `⚔️ Você perdeu o duelo contra ${resolvedOpponentName}. Sua derrota o encorajou. Sua honra despencou.`;
+        addLog(loseMsg);
+        addToEventLog(loseMsg, 'fail');
+        setCharacter(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            health: Math.max(0, Math.min(100, prev.health - 35)),
+            honor: Math.max(0, Math.min(100, prev.honor - 25)),
+          };
+        });
+      }
+      applyDuelDurability();
+      setCurrentView('DASHBOARD');
+      return;
+    }
+
+    // If the duel was triggered from an event with custom callbacks, use those.
+    // They handle all stat changes and logging internally.
+    if (customOnWin || customOnLose) {
+      if (result === 'win' && customOnWin) customOnWin();
+      if (result === 'lose' && customOnLose) customOnLose();
+      // Still destroy the coworker relationship — a duel always strains it
+      setCharacter(prev => {
+        if (!prev?.currentJob?.coworkers) return prev;
+        const coworkerObj = prev.currentJob!.coworkers.find(c => c.id === resolvedCoworkerId);
+        const updatedGlobalEnemies = promoteToEnemy(prev.globalEnemies ?? [], resolvedCoworkerId, coworkerObj);
+        if (updatedGlobalEnemies !== (prev.globalEnemies ?? [])) {
+          const enemyMsg = `🩸 O ódio de ${coworkerObj?.name ?? resolvedOpponentName} ferveu após o duelo. Ele agora é seu inimigo declarado!`;
+          addLog(enemyMsg);
+          addToEventLog(enemyMsg, 'fail');
+        }
+        return {
+          ...prev,
+          currentJob: {
+            ...prev.currentJob!,
+            coworkers: prev.currentJob!.coworkers.map(c =>
+              c.id === resolvedCoworkerId ? { ...c, relationship: 0 } : c
+            ),
+          },
+          globalEnemies: updatedGlobalEnemies,
+        };
+      });
+      applyDuelDurability();
+      setCurrentView('DASHBOARD');
+      return;
+    }
+
+    // ── Default coworker-duel consequences ──────────────────────────────────
+    let honorChange = 0;
+    let healthChange = 0;
+    let logMessage = '';
+    let logType: 'success' | 'fail' | 'neutral' = 'neutral';
+
+    if (result === 'win') {
+      honorChange = 20;
+      healthChange = -15;
+      logMessage = `⚔️ Você venceu o duelo contra ${resolvedOpponentName}! Sua honra cresceu, mas você saiu ferido.`;
+      logType = 'success';
+    } else {
+      honorChange = -20;
+      healthChange = -40;
+      logMessage = `⚔️ Você perdeu o duelo contra ${resolvedOpponentName}. Sua honra foi manchada e você está gravemente ferido.`;
+      logType = 'fail';
+    }
+
+    setCharacter(prev => {
+      if (!prev) return prev;
+      const coworkerObj = prev.currentJob?.coworkers?.find(c => c.id === resolvedCoworkerId);
+      const updatedCoworkers = (prev.currentJob?.coworkers ?? []).map(c =>
+        c.id === resolvedCoworkerId ? { ...c, relationship: 0 } : c
+      );
+      const updatedGlobalEnemies = promoteToEnemy(prev.globalEnemies ?? [], resolvedCoworkerId, coworkerObj);
+      if (updatedGlobalEnemies !== (prev.globalEnemies ?? [])) {
+        const enemyMsg = `🩸 O ódio de ${resolvedOpponentName} ferveu após o duelo. Ele agora é seu inimigo declarado!`;
+        addLog(enemyMsg);
+        addToEventLog(enemyMsg, 'fail');
+      }
+      return {
+        ...prev,
+        health: Math.max(0, Math.min(100, prev.health + healthChange)),
+        honor: Math.max(0, Math.min(100, prev.honor + honorChange)),
+        currentJob: prev.currentJob
+          ? { ...prev.currentJob, coworkers: updatedCoworkers }
+          : prev.currentJob,
+        globalEnemies: updatedGlobalEnemies,
+      };
+    });
+
+    addLog(logMessage);
+    addToEventLog(logMessage, logType);
+
+    // === DURABILITY DEPLETION (runs after every duel path) ===
+    setCharacter(prev => {
+      if (!prev) return prev;
+      let updated = { ...prev };
+      const newInventory = prev.inventory
+        .map(item => {
+          if ((item.type !== 'WEAPON' && item.type !== 'ARMOR') || !item.isEquipped) return item;
+          const newDur = (item.durability ?? 1) - 1;
+          if (newDur <= 0) return null; // mark for removal
+          return { ...item, durability: newDur };
+        })
+        .filter((item): item is NonNullable<typeof item> => {
+          if (item === null) return false;
+          return true;
+        });
+
+      // Detect broken items and revert their stats
+      prev.inventory.forEach(item => {
+        if ((item.type !== 'WEAPON' && item.type !== 'ARMOR') || !item.isEquipped) return;
+        const newDur = (item.durability ?? 1) - 1;
+        if (newDur <= 0) {
+          const mods = item.statModifiers ?? {};
+          if (mods.health)   updated.health   = Math.max(0, (updated.health ?? 0) - mods.health);
+          if (mods.strength) updated.strength = Math.max(0, (updated.strength ?? 0) - mods.strength);
+          if (mods.honor)    updated.honor    = Math.max(0, (updated.honor ?? 0) - mods.honor);
+          if (mods.faith)    updated.faith    = Math.max(0, (updated.faith ?? 0) - mods.faith);
+          addLog(`💥 Seu(Sua) ${item.name} quebrou após o duelo e foi perdido(a)!`);
+        }
+      });
+
+      updated.inventory = newInventory;
+      return updated;
+    });
+
+    setCurrentView('DASHBOARD');
+  };
+
+  // === INTERAÇÃO COM INIMIGOS GLOBAIS ===
+  const handleEnemyInteraction = (enemyId: string, actionType: 'INSULT' | 'DUEL') => {
+    if (!character) return;
+    const enemy = (character.globalEnemies ?? []).find(e => e.id === enemyId);
+    if (!enemy) return;
+
+    if (actionType === 'DUEL') {
+      setCurrentView('DASHBOARD');
+      setDuelModal({
+        isVisible: true,
+        coworkerId: enemyId,
+        opponentName: enemy.name,
+        opponentStrength: enemy.strength,
+        sourceType: 'enemy',
+      });
+      return;
+    }
+
+    // INSULT
+    const logMessage = `😠 Você insultou ${enemy.name} publicamente. Vocês se odeiam cada vez mais.`;
+    addLog(logMessage);
+    addToEventLog(logMessage, 'fail');
+    // Insult has no mechanical effect beyond the narrative — relationship is already 0
   };
 
   // === TRABALHAR ===
@@ -1982,6 +2968,44 @@ function AppContent() {
   };
 
   // === DISMISS NASCIMENTO DE IRMÃO ===
+  // === NASCIMENTO DE FILHO — confirmar nome ===
+  const handleBirthNameChosen = (chosenName: string) => {
+    const baseChar = pendingBirthCharRef.current;
+    if (!baseChar?.pendingPregnancy) return;
+
+    const pregnancy = baseChar.pendingPregnancy;
+    const gender: Child['gender'] = Math.random() > 0.5 ? 'Masculino' : 'Feminino';
+    const newChild: Child = {
+      id: Math.random().toString(36).slice(2),
+      name: chosenName || (gender === 'Masculino' ? 'João' : 'Maria'),
+      gender,
+      type: pregnancy.type,
+      age: 0,
+      relationship: 50,
+      health: 80,
+      isBaptized: false,
+    };
+    const genderLabel = gender === 'Masculino' ? 'filho' : 'filha';
+
+    const updatedChar: Character = {
+      ...baseChar,
+      children: [...(baseChar.children ?? []), newChild],
+      pendingPregnancy: null,
+      honor: pregnancy.type === 'Bastardo'
+        ? Math.max(0, baseChar.honor - 15)
+        : baseChar.honor,
+    };
+
+    setCharacter(updatedChar);
+    setShowBirthModal(false);
+    pendingBirthCharRef.current = null;
+
+    addLog(`👶 Nasceu seu ${genderLabel} ${pregnancy.type}: ${newChild.name}!`);
+    addToEventLog(`Nasceu ${newChild.name} (${pregnancy.type})`, 'success');
+
+    checkForEvents(updatedChar);
+  };
+
   const handleSiblingBirthDismiss = () => {
     setSiblingBirthModal({ isOpen: false });
     // Continuar com checkForEvents adiado
@@ -2067,6 +3091,48 @@ function AppContent() {
 
   const [activeActivity, setActiveActivity] = useState<typeof ACTIVITY_EVENTS[number] | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [potentialMatch, setPotentialMatch] = useState<PotentialMatch | null>(null);
+
+
+  const generateMatch = (playerAge: number, playerClass: string): PotentialMatch => {
+    const maleNames = ['Afonso', 'Mateus', 'João', 'Henrique', 'Rodrigo', 'Diogo', 'Tomás', 'Filipe'];
+    const femaleNames = ['Beatriz', 'Catarina', 'Leonor', 'Isabel', 'Inês', 'Margarida', 'Ana', 'Filipa'];
+    const gender = Math.random() < 0.5 ? 'Masculino' : 'Feminino';
+    const name = gender === 'Masculino'
+      ? maleNames[Math.floor(Math.random() * maleNames.length)]
+      : femaleNames[Math.floor(Math.random() * femaleNames.length)];
+    const age = Math.max(16, playerAge - 3 + Math.floor(Math.random() * 7));
+
+    let matchClass: string;
+    if (playerClass === 'peasant') {
+      matchClass = Math.random() < 0.85 ? 'Camponês' : 'Artesão';
+    } else if (playerClass === 'artisan') {
+      matchClass = Math.random() < 0.7 ? 'Artesão' : 'Camponês';
+    } else {
+      matchClass = 'Nobreza';
+    }
+
+    const peasantOccupations = ['Trabalhador Rural', 'Lenhador', 'Criador de Porcos', 'Filho(a) do Moleiro'];
+    const artisanOccupations = ['Aprendiz de Ferreiro', 'Tecelão(ã)', 'Filho(a) do Padeiro'];
+    const nobleOccupations = ['Lorde', 'Lady', 'Herdeiro(a) do Feudo'];
+    const occupationPool = matchClass === 'Nobreza' ? nobleOccupations
+      : matchClass === 'Artesão' ? artisanOccupations
+      : peasantOccupations;
+    const occupation = occupationPool[Math.floor(Math.random() * occupationPool.length)];
+
+    const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const wealthBase = matchClass === 'Nobreza' ? 50 : matchClass === 'Artesão' ? 30 : 10;
+
+    return {
+      name, gender, age, socialClass: matchClass, occupation,
+      stats: {
+        vitality:  rand(10, 100),
+        strength:  rand(10, 100),
+        honor:     rand(10, 100),
+        wealth:    Math.min(100, wealthBase + rand(0, 50)),
+      },
+    };
+  };
 
   const handleActivityPress = (activity: typeof ACTIVITY_EVENTS[number]) => {
     if (!character) return;
@@ -2171,12 +3237,14 @@ function AppContent() {
     if (activity.id === 'poach_peasant') {
       pendingPoachingAction.current = (success: boolean) => {
         if (success) {
-          const meatItem = {
+          const meatItem: MarketItem = {
             id: `venison_${Date.now()}`,
             name: 'Carne de Veado',
+            emoji: '🥩',
+            price: 15,
             type: 'food',
-            value: 15,
             description: 'Carne fresca e nutritiva de caça ilegal.',
+            allowedClasses: [],
           };
           setCharacter((prev) => {
             if (!prev) return prev;
@@ -2271,6 +3339,112 @@ function AppContent() {
     }
   };
 
+  // === CONSUMIR ITEM DO INVENTÁRIO ===
+  const consumeItem = (item: MarketItem, index: number) => {
+    if (!character) return;
+    setCharacter((prev) => {
+      if (!prev) return prev;
+      const mods = item.statModifiers ?? {};
+      const updated = { ...prev };
+      if (mods.health)     updated.health     = Math.min(100, prev.health + mods.health);
+      if (mods.strength)   updated.strength   = Math.min(100, (prev.strength ?? 0) + mods.strength);
+      if (mods.honor)      updated.honor      = Math.min(100, prev.honor + mods.honor);
+      if (mods.faith)      updated.faith      = Math.min(100, (prev.faith ?? 0) + mods.faith);
+      if (mods.money)      updated.money      = Math.max(0, prev.money + mods.money);
+      if (item.slotIncrease) updated.maxInventorySlots = prev.maxInventorySlots + item.slotIncrease;
+      // Decrement quantity; remove if reaches 0
+      const newInventory = [...prev.inventory];
+      const qty = newInventory[index].quantity ?? 1;
+      if (qty <= 1) {
+        newInventory.splice(index, 1);
+      } else {
+        newInventory[index] = { ...newInventory[index], quantity: qty - 1 };
+      }
+      updated.inventory = newInventory;
+      return updated;
+    });
+    if (item.slotIncrease) {
+      addLog(`→ Você usou ${item.name} e expandiu sua mochila em +${item.slotIncrease} espaços.`);
+    } else {
+      addLog(`→ Você usou ${item.name}.`);
+    }
+  };
+
+  // === VENDER ITEM DO INVENTÁRIO ===
+  const sellItem = (item: MarketItem, index: number) => {
+    if (!character) return;
+    const sellPrice = item.price > 0 ? Math.floor(item.price / 2) : 1;
+    setCharacter((prev) => {
+      if (!prev) return prev;
+      const newInventory = [...prev.inventory];
+      const qty = newInventory[index].quantity ?? 1;
+      if (qty <= 1) {
+        newInventory.splice(index, 1);
+      } else {
+        newInventory[index] = { ...newInventory[index], quantity: qty - 1 };
+      }
+      return { ...prev, money: prev.money + sellPrice, inventory: newInventory };
+    });
+    addLog(`→ Você vendeu 1x ${item.name} por ${sellPrice} moedas.`);
+  };
+
+  // === EQUIPAR/DESEQUIPAR ITEM (slots independentes: WEAPON e ARMOR) ===
+  const equipItem = (index: number) => {
+    const item = character?.inventory[index];
+    if (item) {
+      addLog(item.isEquipped
+        ? `→ Você desequipou ${item.name}.`
+        : `→ Você equipou ${item.name}.`
+      );
+    }
+    setCharacter((prev) => {
+      if (!prev) return prev;
+      const item = prev.inventory[index];
+      if (item.type !== 'WEAPON' && item.type !== 'ARMOR') return prev;
+
+      const applyMods = (char: typeof prev, mods: MarketItem['statModifiers'], sign: 1 | -1) => {
+        if (!mods) return char;
+        return {
+          ...char,
+          health:   mods.health   ? Math.max(0, Math.min(100, char.health + mods.health * sign)) : char.health,
+          strength: mods.strength ? Math.max(0, Math.min(100, (char.strength ?? 0) + mods.strength * sign)) : char.strength,
+          honor:    mods.honor    ? Math.max(0, Math.min(100, char.honor + mods.honor * sign)) : char.honor,
+          faith:    mods.faith    ? Math.max(0, Math.min(100, (char.faith ?? 0) + mods.faith * sign)) : char.faith,
+        };
+      };
+
+      let updated = { ...prev };
+
+      if (item.isEquipped) {
+        // Toggle off — subtract this item's stats
+        updated = applyMods(updated, item.statModifiers, -1);
+        const newInventory = prev.inventory.map((it, i) =>
+          i === index ? { ...it, isEquipped: false } : it
+        );
+        return { ...updated, inventory: newInventory };
+      }
+
+      // Equipping — find and unequip any existing item of the SAME type
+      for (const other of prev.inventory) {
+        if (other !== item && other.type === item.type && other.isEquipped) {
+          updated = applyMods(updated, other.statModifiers, -1);
+          break;
+        }
+      }
+
+      // Add new item's stats
+      updated = applyMods(updated, item.statModifiers, 1);
+
+      // Update inventory: equip clicked, unequip same-slot others
+      const newInventory = prev.inventory.map((it, i) => {
+        if (it.type !== item.type) return it;
+        return { ...it, isEquipped: i === index };
+      });
+
+      return { ...updated, inventory: newInventory };
+    });
+  };
+
   // === RENDERIZAR BARRA DE STATUS ===
   const renderStatusBar = (label: string, value: number, color: string) => {
     const barColor = value <= 30 ? COLORS.feedback.error : color;
@@ -2302,11 +3476,12 @@ function AppContent() {
       case 'ASSETS':
         return 'Posses';
       case 'ACTIVITIES':
-        return selectedCategory === 'body_soul'
-          ? 'Corpo & Alma'
-          : selectedCategory === 'crime'
-            ? 'Crimes'
-            : 'Atividades';
+        return selectedCategory === 'body_soul' ? 'Corpo & Alma'
+          : selectedCategory === 'crime'      ? 'Crimes'
+          : selectedCategory === 'love'       ? 'Amor & Dinastia'
+          : selectedCategory === 'adoption'   ? 'Adoção'
+          : selectedCategory === 'testament'  ? 'Testamento'
+          : 'Atividades';
       default:
         return '';
     }
@@ -2389,9 +3564,28 @@ function AppContent() {
             <Text style={styles.headerLocation}>
               📍 {character.location} | ⚡ {currentEra?.name || 'Era Desconhecida'}
             </Text>
-            <Text style={styles.headerMoney}>
-              💰 ${character.money} | 🍖 {character.food}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={styles.headerMoney}>
+                💰 ${character.money} | 🍖 {character.food}
+              </Text>
+              {__DEV__ && (
+                <TouchableOpacity
+                  onPress={() => setCharacter(prev => prev ? {
+                    ...prev,
+                    age: 20,
+                    currentYear: prev.birthYear + 20,
+                    health: 100,
+                    strength: 100,
+                    faith: 100,
+                    honor: 100,
+                    money: 999,
+                    devForcePregnancy: true,
+                  } : prev)}
+                >
+                  <Text style={{ fontSize: 10, color: COLORS.accent.gold, opacity: 0.5 }}>[ DEV: Age 20 + Stats ]</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* AVATAR */}
@@ -2411,8 +3605,8 @@ function AppContent() {
           <View style={styles.statusSection}>
             {renderStatusBar('❤️ Vitalidade', character.health, COLORS.status.health)}
             {character.faith !== undefined && renderStatusBar('⛪ Fé', character.faith, COLORS.status.sanity)}
-            {character.strength !== undefined && renderStatusBar('💪 Força', character.strength, COLORS.status.honor)}
-            {renderStatusBar('🛡 Honra', character.honor, COLORS.status.honor)}
+            {character.strength !== undefined && renderStatusBar('💪 Força', character.strength, '#f59e0b')}
+            {renderStatusBar('🛡 Honra', character.honor, '#8b5cf6')}
             {character.faith === undefined && renderStatusBar('🧠 Sanidade', character.sanity, COLORS.status.sanity)}
           </View>
 
@@ -2423,19 +3617,22 @@ function AppContent() {
             nestedScrollEnabled
             onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
           >
-            {gameLog.map((log, index) => (
-              <Text key={index} style={styles.logText}>
-                {log}
-              </Text>
-            ))}
+            {gameLog.map((entry, index) => {
+              if (entry.includes('Idade:') || entry.includes('Ano:')) {
+                return (
+                  <View key={index}>
+                    <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.15)', marginVertical: 12, width: '100%' }} />
+                    <Text style={[styles.logText, { fontWeight: 'bold', color: '#e8d5a3' }]}>{entry}</Text>
+                  </View>
+                );
+              }
+              return (
+                <Text key={index} style={styles.logText}>
+                  {entry}
+                </Text>
+              );
+            })}
           </ScrollView>
-
-          {/* AVISO DE FOME */}
-          {character.health <= 30 && (
-            <View style={styles.hungerWarning}>
-              <Text style={styles.hungerWarningText}>⚠️ VOCÊ ESTÁ ENFRAQUECIDO!</Text>
-            </View>
-          )}
 
       </>
 
@@ -2462,8 +3659,10 @@ function AppContent() {
           character={character}
           setCharacter={setCharacter}
           onAddToLog={addToEventLog}
+          onAddLog={addLog}
           onSetCurrentEvent={setCurrentEvent}
           onNPCInteraction={handleNPCInteraction}
+          onEnemyInteraction={handleEnemyInteraction}
         />
       )}
 
@@ -2481,60 +3680,52 @@ function AppContent() {
 
       {/* ASSETS VIEW */}
       {currentView === 'ASSETS' && (
-        <View style={styles.assetsScreen}>
-          <Text style={styles.assetsTitle}>💰 Posses</Text>
-          <Text style={styles.assetsSubtitle}>Seus bens e pertences</Text>
+        <PossesView
+          character={character}
+          currentMarketItems={currentMarketItems}
+          fixedMarketItems={FIXED_MARKET_ITEMS}
+          onBuyItem={(item, adjustedPrice, isFixed) => {
+            // Stacking: consumables with same id stack instead of taking a slot
+            const existingIdx = item.type === 'CONSUMABLE'
+              ? character.inventory.findIndex(i => i.id === item.id)
+              : -1;
 
-          {character.inventory.length === 0 ? (
-            <View style={styles.assetsEmpty}>
-              <Text style={styles.assetsEmptyText}>Você não possui nenhum item.</Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.assetsScroll} nestedScrollEnabled>
-              {/* Infância */}
-              {character.inventory.filter(i => i.type === 'childhood').length > 0 && (
-                <>
-                  <Text style={styles.assetsCategoryTitle}>🧸 Infância</Text>
-                  {character.inventory.filter(i => i.type === 'childhood').map((item) => (
-                    <View key={item.id} style={styles.assetCard}>
-                      <Text style={styles.assetName}>{item.name}</Text>
-                      <Text style={styles.assetType}>Brinquedo</Text>
-                    </View>
-                  ))}
-                </>
-              )}
+            if (existingIdx === -1 && character.inventory.length >= character.maxInventorySlots) {
+              Alert.alert('Mochila cheia!', 'Sua mochila está cheia! Venda ou use algum item primeiro.');
+              return;
+            }
 
-              {/* Comida */}
-              {character.inventory.filter(i => i.type === 'food').length > 0 && (
-                <>
-                  <Text style={styles.assetsCategoryTitle}>🥩 Comida</Text>
-                  {character.inventory.filter(i => i.type === 'food').map((item) => (
-                    <View key={item.id} style={styles.assetFoodCard}>
-                      <View style={styles.assetFoodInfo}>
-                        <Text style={styles.assetName}>{item.name}</Text>
-                        <Text style={styles.assetType}>{item.description || 'Alimento'}</Text>
-                      </View>
-                      <View style={styles.assetFoodActions}>
-                        <TouchableOpacity
-                          style={styles.assetActionBtn}
-                          onPress={() => handleInventoryAction(item.id, 'eat')}
-                        >
-                          <Text style={styles.assetActionText}>COMER</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.assetActionBtnSell}
-                          onPress={() => handleInventoryAction(item.id, 'sell')}
-                        >
-                          <Text style={styles.assetActionText}>VENDER</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </>
-              )}
-            </ScrollView>
-          )}
-        </View>
+            setCharacter((prev) => {
+              if (!prev) return prev;
+              let newInventory: typeof prev.inventory;
+              if (existingIdx !== -1) {
+                // Increment quantity of existing stack
+                newInventory = prev.inventory.map((i, idx) =>
+                  idx === existingIdx ? { ...i, quantity: (i.quantity ?? 1) + 1 } : i
+                );
+              } else {
+                // New slot: add item with quantity 1 (and its base durability)
+                newInventory = [...prev.inventory, { ...item, quantity: 1 }];
+              }
+              return { ...prev, money: prev.money - adjustedPrice, inventory: newInventory };
+            });
+
+            // Build purchase log
+            let purchaseLog = `🛒 Você comprou ${item.name} por ${adjustedPrice} moedas.`;
+            if (item.maxDurability != null) {
+              purchaseLog += ` (Sua durabilidade é de ${item.maxDurability} usos).`;
+            }
+            addLog(purchaseLog);
+
+            if (!isFixed) {
+              setCurrentMarketItems((prev) => prev.filter((i) => i.id !== item.id));
+            }
+          }}
+          onConsumeItem={consumeItem}
+          onSellItem={sellItem}
+          onEquipItem={equipItem}
+          onClose={() => setCurrentView('DASHBOARD')}
+        />
       )}
 
       {/* ACTIVITIES VIEW */}
@@ -2563,6 +3754,62 @@ function AppContent() {
                 <Text style={styles.categoryChevron}>›</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity
+              style={styles.categoryCard}
+              activeOpacity={0.7}
+              onPress={() => setSelectedCategory('love')}
+            >
+              <Text style={styles.categoryLabel}>❤️ Amor & Dinastia</Text>
+              <Text style={styles.categoryChevron}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.categoryCard}
+              activeOpacity={0.7}
+              onPress={() => setSelectedCategory('adoption')}
+            >
+              <Text style={styles.categoryLabel}>👶 Adoção</Text>
+              <Text style={styles.categoryChevron}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.categoryCard}
+              activeOpacity={0.7}
+              onPress={() => setSelectedCategory('testament')}
+            >
+              <Text style={styles.categoryLabel}>📜 Testamento</Text>
+              <Text style={styles.categoryChevron}>›</Text>
+            </TouchableOpacity>
+
+            {/* ── Divider ── */}
+            <View style={styles.quitDivider} />
+
+            {/* ── Desistir ── */}
+            <TouchableOpacity
+              style={styles.quitCard}
+              activeOpacity={0.75}
+              onPress={() =>
+                Alert.alert(
+                  '🚪 Desistir desta Vida',
+                  `${character.name} ${character.surname} tem ${character.age} anos.\n\nAbandonar esta vida apagará todo o progresso atual. Tem certeza?`,
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Desistir',
+                      style: 'destructive',
+                      onPress: () => {
+                        setCurrentView('DASHBOARD');
+                        startNewLife();
+                      },
+                    },
+                  ]
+                )
+              }
+            >
+              <Text style={styles.quitLabel}>🚪 Desistir</Text>
+              <Text style={styles.quitChevron}>›</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -2630,6 +3877,288 @@ function AppContent() {
               );
             })}
           </View>
+        </View>
+      )}
+
+      {/* ACTIVITIES DETAIL: AMOR & DINASTIA */}
+      {currentView === 'ACTIVITIES' && selectedCategory === 'love' && (
+        <View style={styles.activitiesScreen}>
+          <TouchableOpacity
+            style={styles.categoryBackButton}
+            onPress={() => setSelectedCategory(null)}
+          >
+            <Text style={styles.categoryBackText}>← Voltar</Text>
+          </TouchableOpacity>
+          <Text style={styles.activitiesTitle}>❤️ Amor & Dinastia</Text>
+
+          {/* Status badge */}
+          <View style={styles.loveStatusBadge}>
+            <Text style={styles.loveStatusText}>
+              {character.partner ? `💑 ${character.partner.status}: ${character.partner.name}` : '🔓 Solteiro(a)'}
+            </Text>
+          </View>
+
+          {/* ── Partnered message ─────────────────────────────────── */}
+          {character.partner && (
+            <View style={styles.lovePartnerBox}>
+              <Text style={styles.lovePartnerText}>
+                💑 Você já possui um compromisso com {character.partner.name}.{'\n'}Visite a aba <Text style={{ color: COLORS.accent.gold, fontWeight: '700' }}>Relações</Text> para interagir.
+              </Text>
+            </View>
+          )}
+
+          {/* ── Search buttons (only when single) ─────────────────── */}
+          {!character.partner && (
+            <View style={styles.activitiesGrid}>
+              {/* ─── Camponês ─────────────────────────────────────── */}
+              {character.socialClass === 'peasant' && (
+                <>
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (Math.random() < 0.3) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você procurou pela aldeia, mas não encontrou ninguém interessante.');
+                        Alert.alert('💔 Sem sorte...', 'Você procurou, mas não encontrou ninguém interessante.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>🔍 Procurar pretendentes pela aldeia</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>Grátis · 30% de chance</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (character.money < 5) {
+                        Alert.alert('💰 Moedas insuficientes', 'Você precisa de 5 💰 para ir à taverna.');
+                        return;
+                      }
+                      setCharacter(prev => prev ? { ...prev, money: prev.money - 5 } : prev);
+                      if (Math.random() < 0.7) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você gastou 5 moedas na taverna, mas voltou sozinho.');
+                        Alert.alert('💔 Sem sorte...', 'Você gastou a noite na taverna mas não encontrou ninguém.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>🍻 Tentar a sorte cortejando na taverna</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>5 💰 · 70% de chance</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* ─── Artesão ──────────────────────────────────────── */}
+              {character.socialClass === 'artisan' && (
+                <>
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (Math.random() < 0.3) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você consultou as famílias da Guilda, mas nenhuma apresentou candidatos.');
+                        Alert.alert('💔 Sem sorte...', 'Nenhuma família da Guilda apresentou candidatos desta vez.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>👀 Buscar pretendentes nas famílias da Guilda</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>Grátis · 30% de chance</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (character.money < 15) {
+                        Alert.alert('💰 Moedas insuficientes', 'Você precisa de 15 💰 para contratar a casamenteira.');
+                        return;
+                      }
+                      setCharacter(prev => prev ? { ...prev, money: prev.money - 15 } : prev);
+                      if (Math.random() < 0.75) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você pagou 15 moedas à casamenteira, mas ela não encontrou ninguém adequado.');
+                        Alert.alert('💔 Sem sorte...', 'A casamenteira não encontrou ninguém adequado desta vez.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>👵 Pagar casamenteira para achar um bom partido</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>15 💰 · 75% de chance</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* ─── Nobreza ──────────────────────────────────────── */}
+              {(character.socialClass === 'nobility' || character.socialClass === 'gentry') && (
+                <>
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (Math.random() < 0.3) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você sondou a Corte, mas não encontrou candidatos adequados ao seu status.');
+                        Alert.alert('💔 Sem sorte...', 'Não há candidatos adequados ao seu status no momento.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>🏰 Sondar pretendentes solteiros na Corte</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>Grátis · 30% de chance</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.activityCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (character.money < 300) {
+                        Alert.alert('💰 Moedas insuficientes', 'Você precisa de 300 💰 para enviar diplomatas.');
+                        return;
+                      }
+                      setCharacter(prev => prev ? { ...prev, money: prev.money - 300 } : prev);
+                      if (Math.random() < 0.85) {
+                        setPotentialMatch(generateMatch(character.age, character.socialClass));
+                      } else {
+                        addLog('💔 Você gastou 300 moedas em diplomatas, mas as negociações fracassaram.');
+                        Alert.alert('💔 Negociação fracassou', 'As negociações não chegaram a um acordo favorável.');
+                      }
+                    }}
+                  >
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityLabel}>📜 Enviar diplomatas para negociar noivado</Text>
+                    </View>
+                    <Text style={styles.activityDesc}>300 💰 · 85% de chance</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* POTENTIAL MATCH MODAL */}
+      <Modal
+        visible={!!potentialMatch}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPotentialMatch(null)}
+      >
+        <View style={styles.matchOverlay}>
+          {potentialMatch && (
+            <View style={styles.matchCard}>
+              <Text style={styles.matchHeader}>❤️ Interesse Amoroso</Text>
+
+              {/* Info fields */}
+              <View style={styles.matchInfoSection}>
+                {[
+                  ['Nome',          potentialMatch.name],
+                  ['Gênero',        potentialMatch.gender],
+                  ['Idade',         String(potentialMatch.age)],
+                  ['Classe Social', potentialMatch.socialClass],
+                  ['Ocupação',      potentialMatch.occupation],
+                ].map(([label, value]) => (
+                  <View key={label} style={styles.matchInfoRow}>
+                    <Text style={styles.matchInfoLabel}>{label}</Text>
+                    <Text style={styles.matchInfoValue}>{value}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Stats bars */}
+              <View style={styles.matchStatsSection}>
+                {([
+                  ['Vitalidade', potentialMatch.stats.vitality,  '#e05555'],
+                  ['Força',      potentialMatch.stats.strength,  '#e09a30'],
+                  ['Honra',      potentialMatch.stats.honor,     '#4a7abf'],
+                  ['Riqueza',    potentialMatch.stats.wealth,    '#4aaf72'],
+                ] as [string, number, string][]).map(([label, value, color]) => (
+                  <View key={label} style={styles.matchStatRow}>
+                    <Text style={styles.matchStatLabel}>{label}</Text>
+                    <View style={styles.matchStatBarBg}>
+                      <View style={[styles.matchStatBarFill, { width: `${value}%` as any, backgroundColor: color }]} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Action buttons */}
+              <TouchableOpacity
+                style={styles.matchBtnCourt}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setCharacter(prev => prev ? {
+                    ...prev,
+                    partner: {
+                      name: potentialMatch.name,
+                      gender: potentialMatch.gender as 'Masculino' | 'Feminino',
+                      status: 'Pretendente',
+                      socialClass: potentialMatch.socialClass,
+                      age: potentialMatch.age,
+                      occupation: potentialMatch.occupation,
+                      relationship: 20,
+                      stats: potentialMatch.stats,
+                    },
+                  } : prev);
+                  addLog(`❤️ Você iniciou o cortejo com ${potentialMatch.name} (${potentialMatch.socialClass}).`);
+                  setPotentialMatch(null);
+                }}
+              >
+                <Text style={styles.matchBtnCourtText}>💑 Iniciar Cortejo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.matchBtnPass}
+                activeOpacity={0.8}
+                onPress={() => setPotentialMatch(null)}
+              >
+                <Text style={styles.matchBtnPassText}>Não faz meu tipo</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* ACTIVITIES DETAIL: ADOÇÃO */}
+      {currentView === 'ACTIVITIES' && selectedCategory === 'adoption' && (
+        <View style={styles.activitiesScreen}>
+          <TouchableOpacity
+            style={styles.categoryBackButton}
+            onPress={() => setSelectedCategory(null)}
+          >
+            <Text style={styles.categoryBackText}>← Voltar</Text>
+          </TouchableOpacity>
+          <Text style={styles.activitiesTitle}>👶 Adoção</Text>
+          <Text style={styles.activitiesSubtitle}>Sistema de Orfanatos e Adoção em construção...</Text>
+        </View>
+      )}
+
+      {/* ACTIVITIES DETAIL: TESTAMENTO */}
+      {currentView === 'ACTIVITIES' && selectedCategory === 'testament' && (
+        <View style={styles.activitiesScreen}>
+          <TouchableOpacity
+            style={styles.categoryBackButton}
+            onPress={() => setSelectedCategory(null)}
+          >
+            <Text style={styles.categoryBackText}>← Voltar</Text>
+          </TouchableOpacity>
+          <Text style={styles.activitiesTitle}>📜 Testamento</Text>
+          <Text style={styles.activitiesSubtitle}>Sistema de Herança e Legado em construção...</Text>
         </View>
       )}
 
@@ -2701,6 +4230,12 @@ function AppContent() {
         onChoice={(id) => handleSimpleEventChoice(Number(id))}
       />
 
+      {/* BIRTH MODAL */}
+      <BirthModal
+        pregnancy={showBirthModal ? (pendingBirthCharRef.current?.pendingPregnancy ?? null) : null}
+        onNameChosen={handleBirthNameChosen}
+      />
+
       {/* SIBLING BIRTH MODAL */}
       <EventModal
         isOpen={siblingBirthModal.isOpen}
@@ -2718,6 +4253,18 @@ function AppContent() {
         event={npcEvent.event}
         onChoice={handleNpcEventChoice}
       />
+
+      {/* DUEL MINI-GAME MODAL — only mounted when active, mirroring EventModal pattern */}
+      {character && duelModal.isVisible && (
+        <DuelModal
+          isVisible={duelModal.isVisible}
+          onClose={() => setDuelModal(prev => ({ ...prev, isVisible: false }))}
+          playerStrength={character.strength ?? 50}
+          opponentStrength={duelModal.opponentStrength}
+          opponentName={duelModal.opponentName}
+          onDuelEnd={handleDuelEnd}
+        />
+      )}
 
       {/* MINI-GAME OVERLAY */}
       {showMiniGame && (
@@ -3033,12 +4580,203 @@ const styles = StyleSheet.create({
     color: COLORS.accent.gold,
     fontWeight: 'bold',
   },
+  quitDivider: {
+    height: 1,
+    backgroundColor: COLORS.background.tertiary,
+    marginVertical: 4,
+  },
+  quitCard: {
+    backgroundColor: 'rgba(161, 58, 47, 0.12)',
+    borderRadius: 10,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.feedback.error,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  quitLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.feedback.error,
+  },
+  quitChevron: {
+    fontSize: 24,
+    color: COLORS.feedback.error,
+    fontWeight: 'bold',
+  },
   categoryBackButton: {
     marginBottom: 12,
   },
   categoryBackText: {
     fontSize: 14,
     color: COLORS.accent.gold,
+    fontWeight: '600',
+  },
+  // === LOVE TAB ===
+  loveStatusBadge: {
+    alignSelf: 'center',
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: COLORS.accent.bronze,
+    marginBottom: 20,
+  },
+  loveStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.accent.gold,
+  },
+  lovePartnerBox: {
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 10,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: COLORS.accent.bronze,
+    alignItems: 'center',
+  },
+  lovePartnerText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  // === LOVE SECTION ===
+  loveSectionHeader: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#b89a5a',
+    marginTop: 16,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  lovePartnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lovePartnerEmoji: {
+    fontSize: 22,
+  },
+  lovePartnerName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  lovePartnerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  lovePartnerStatus: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+  },
+  partnerCard: {
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.accent.bronze,
+    marginTop: 8,
+  },
+  // === POTENTIAL MATCH MODAL ===
+  matchOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  matchCard: {
+    backgroundColor: '#1e1e2e',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#b89a5a',
+  },
+  matchHeader: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#e8d5a3',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  matchInfoSection: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  matchInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a3e',
+  },
+  matchInfoLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#888',
+  },
+  matchInfoValue: {
+    fontSize: 13,
+    color: '#e8d5a3',
+    fontWeight: '600',
+  },
+  matchStatsSection: {
+    marginBottom: 20,
+    gap: 10,
+  },
+  matchStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  matchStatLabel: {
+    fontSize: 12,
+    color: '#aaa',
+    width: 68,
+  },
+  matchStatBarBg: {
+    flex: 1,
+    height: 10,
+    backgroundColor: '#2a2a3e',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  matchStatBarFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  matchBtnCourt: {
+    backgroundColor: '#2a4a8a',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#4a7abf',
+  },
+  matchBtnCourtText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  matchBtnPass: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  matchBtnPassText: {
+    color: '#888',
+    fontSize: 15,
     fontWeight: '600',
   },
   // === ASSETS ===
