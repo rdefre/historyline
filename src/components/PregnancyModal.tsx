@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import COLORS from '../constants/colors';
 
 interface PregnancyModalProps {
   isOpen: boolean;
@@ -47,61 +48,69 @@ export default function PregnancyModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   container: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 14,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
     padding: 28,
     width: '85%',
     alignItems: 'center',
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
   },
   emoji: {
-    fontSize: 40,
+    fontSize: 44,
     marginBottom: 8,
   },
   title: {
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#e8d5a3',
+    fontWeight: '800',
+    color: COLORS.text.primary,
     marginBottom: 10,
   },
   description: {
     fontSize: 14,
-    color: '#ccc',
+    color: COLORS.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 20,
   },
   keepBtn: {
-    backgroundColor: '#4aaf72',
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: COLORS.ui.pillGreen,
+    borderRadius: 999,
+    paddingVertical: 13,
     paddingHorizontal: 24,
     marginBottom: 12,
     width: '100%',
     alignItems: 'center',
+    shadowColor: COLORS.ui.pillGreen,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   keepText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 15,
   },
   discardBtn: {
-    backgroundColor: 'rgba(161,58,47,0.3)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#a13a2f',
-    paddingVertical: 12,
+    backgroundColor: COLORS.ui.tintRed,
+    borderRadius: 999,
+    paddingVertical: 13,
     paddingHorizontal: 24,
     width: '100%',
     alignItems: 'center',
   },
   discardText: {
-    color: '#ef4444',
-    fontWeight: '600',
+    color: COLORS.feedback.error,
+    fontWeight: '700',
     fontSize: 15,
   },
 });

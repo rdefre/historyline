@@ -1,8 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
+
 import {
   Alert,
   Animated,
+  Easing,
   Modal,
   PanResponder,
   Platform,
@@ -15,7 +17,7 @@ import {
 import FooterMenu from './src/components/FooterMenu';
 import OccupationView from './src/components/OccupationView';
 import RelationshipsView from './src/components/RelationshipsView';
-import COLORS from './src/constants/colors';
+import COLORS, { statusColorForValue } from './src/constants/colors';
 import { getChildhoodEventByClass, type ChildhoodEvent } from './src/data/childhoodEventsByClass';
 import { didEraChange, getCurrentEra } from './src/data/eras';
 import { checkHistoricalEvent, type HistoricalEvent } from './src/data/historicalEvents';
@@ -35,6 +37,7 @@ import { FIXED_MARKET_ITEMS, MASTER_MARKET_ITEMS } from './src/data/marketItems'
 import { generateClassmates, generateNewClassmateName } from './src/utils/classmates';
 import { calculateMoneyResult } from './src/utils/moneyInteractions';
 import { generateChatResult } from './src/utils/npcInteractions';
+import { AudioManager } from './src/utils/audioManager';
 
 // === LOCALIZAÇÃO FIXA: INGLATERRA (1500) ===
 const STARTING_LOCATION = {
@@ -220,24 +223,25 @@ function PoachingGame({ onFinish }: { onFinish: (success: boolean) => void }) {
 const poachStyles = StyleSheet.create({
   barLabel: {
     fontSize: 12,
-    color: '#aaa',
+    fontWeight: '600',
+    color: COLORS.text.secondary,
     alignSelf: 'flex-start',
     marginBottom: 4,
   },
   barOuter: {
     width: '100%',
     height: 20,
-    backgroundColor: '#2a2a3e',
-    borderRadius: 6,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
     overflow: 'hidden',
     marginBottom: 14,
   },
   barFill: {
     height: '100%',
-    borderRadius: 6,
+    borderRadius: 999,
   },
   buttonHolding: {
-    backgroundColor: '#e8b84c',
+    backgroundColor: COLORS.accent.amber,
     transform: [{ scale: 0.95 }],
   },
 });
@@ -246,37 +250,40 @@ const miniStyles = StyleSheet.create({
   overlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
   },
   container: {
     width: '85%',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 16,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#c9a84c',
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
   },
   title: {
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#c9a84c',
+    fontWeight: '800',
+    color: COLORS.text.primary,
     marginBottom: 8,
   },
   instruction: {
     fontSize: 13,
-    color: '#aaa',
+    color: COLORS.text.secondary,
     marginBottom: 24,
     textAlign: 'center',
   },
   barOuter: {
     width: '100%',
     height: 40,
-    backgroundColor: '#2a2a3e',
-    borderRadius: 8,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
     overflow: 'hidden',
     position: 'relative',
     marginBottom: 20,
@@ -285,17 +292,17 @@ const miniStyles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(74, 222, 128, 0.3)',
+    backgroundColor: 'rgba(46, 204, 113, 0.35)',
     borderLeftWidth: 2,
     borderRightWidth: 2,
-    borderColor: '#4ade80',
+    borderColor: COLORS.feedback.success,
   },
   cursor: {
     position: 'absolute',
     top: 2,
     bottom: 2,
     width: 4,
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.text.primary,
     borderRadius: 2,
     marginLeft: -2,
   },
@@ -305,15 +312,134 @@ const miniStyles = StyleSheet.create({
     marginBottom: 16,
   },
   tapButton: {
-    backgroundColor: '#c9a84c',
+    backgroundColor: COLORS.accent.gold,
     paddingVertical: 14,
     paddingHorizontal: 40,
-    borderRadius: 10,
+    borderRadius: 999,
+    shadowColor: COLORS.accent.gold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   tapButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1a1a2e',
+    color: '#FFFFFF',
+  },
+});
+
+// ─── Animated stat bar ────────────────────────────────────────────────────────
+// Width smoothly animates whenever `value` changes (can't use nativeDriver for layout).
+function StatBar({ label, value }: { label: string; value: number }) {
+  const animWidth = useRef(new Animated.Value(value)).current;
+
+  useEffect(() => {
+    Animated.timing(animWidth, {
+      toValue: value,
+      duration: 600,
+      useNativeDriver: false,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+  }, [value, animWidth]);
+
+  const barColor = statusColorForValue(value);
+  const widthInterpolated = animWidth.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={statBarStyles.row}>
+      <Text style={statBarStyles.label}>{label}</Text>
+      <View style={statBarStyles.track}>
+        <Animated.View style={[statBarStyles.fill, { width: widthInterpolated, backgroundColor: barColor }]} />
+      </View>
+      <Text style={[statBarStyles.value, { color: barColor }]}>{value}%</Text>
+    </View>
+  );
+}
+
+const statBarStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  label: {
+    color: COLORS.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
+    width: 104,
+  },
+  track: {
+    flex: 1,
+    height: 20,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginHorizontal: 8,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  value: {
+    fontSize: 12,
+    fontWeight: '800',
+    width: 40,
+    textAlign: 'right',
+  },
+});
+
+// ─── Animated log entry ───────────────────────────────────────────────────────
+// Each entry fades in and slides up slightly on mount.
+function AnimatedLogEntry({ text, bold, accent }: { text: string; bold?: boolean; accent?: boolean }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(6)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, translateY]);
+
+  return (
+    <Animated.Text
+      style={[
+        logEntryStyles.text,
+        bold && logEntryStyles.bold,
+        accent && logEntryStyles.accent,
+        { opacity, transform: [{ translateY }] },
+      ]}
+    >
+      {text}
+    </Animated.Text>
+  );
+}
+
+const logEntryStyles = StyleSheet.create({
+  text: {
+    color: COLORS.text.highlight,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  bold: {
+    fontWeight: 'bold',
+  },
+  accent: {
+    color: COLORS.accent.gold,
   },
 });
 
@@ -364,9 +490,12 @@ function AppContent() {
 
   // === AUTO-SCROLL LOG ===
   const scrollViewRef = useRef<ScrollView>(null);
+  // Debounce para não sobrepor sons quando várias entradas chegam no mesmo tick
+  const lastEventSoundAt = useRef(0);
 
   // === INICIALIZAR JOGO ===
   useEffect(() => {
+    AudioManager.preload();
     startNewLife();
   }, []);
 
@@ -1374,6 +1503,7 @@ function AppContent() {
   // === AVANÇAR IDADE ===
   const ageUp = () => {
     if (!character || waitingForChoice) return;
+    AudioManager.ageUp();
 
     const newAge = character.age + 1;
     const newYear = character.currentYear + 1;
@@ -1400,7 +1530,42 @@ function AppContent() {
       siblings: updatedSiblings,
       partnerActionsThisYear: [], // reset do cooldown anual
       childActionsThisYear: [], // reset do cooldown anual de filhos
-      children: (character.children ?? []).map(c => ({ ...c, age: c.age + 1 })),
+      children: (character.children ?? []).map(c => {
+        if (c.isDead) return c;
+        const childNewAge = c.age + 1;
+        const childDeathChance = (() => {
+          if (childNewAge >= 90) return 1.0;
+          if (childNewAge >= 80) return 0.20;
+          if (childNewAge >= 70) return 0.08;
+          if (childNewAge >= 60) return 0.04;
+          if (childNewAge >= 50) return 0.02;
+          if (childNewAge < 5)   return 0.07; // mortalidade infantil era Tudor
+          return 0.01;
+        })();
+        if (Math.random() < childDeathChance) {
+          deathMessages.push(`💀 Seu filho(a) ${c.name} faleceu aos ${childNewAge} anos.`);
+          return { ...c, age: childNewAge, isDead: true, deathAge: childNewAge };
+        }
+        return { ...c, age: childNewAge };
+      }),
+      partner: (() => {
+        const p = character.partner;
+        if (!p || p.isDead) return p ?? null;
+        const partnerNewAge = p.age + 1;
+        const partnerDeathChance = (() => {
+          if (partnerNewAge >= 90) return 1.0;
+          if (partnerNewAge >= 80) return 0.20;
+          if (partnerNewAge >= 70) return 0.08;
+          if (partnerNewAge >= 60) return 0.04;
+          if (partnerNewAge >= 50) return 0.02;
+          return 0.01;
+        })();
+        if (Math.random() < partnerDeathChance) {
+          deathMessages.push(`💔 Seu parceiro(a) ${p.name} faleceu aos ${partnerNewAge} anos.`);
+          return { ...p, age: partnerNewAge, isDead: true, deathAge: partnerNewAge };
+        }
+        return { ...p, age: partnerNewAge };
+      })(),
     };
 
     // === ASSET UPKEEP & STAT BONUSES ===
@@ -1962,7 +2127,16 @@ function AppContent() {
 
     // Verifica morte
     if (result.death || updatedChar.health === 0) {
+      AudioManager.negative();
       handleDeath(updatedChar, result.message);
+    } else {
+      // Determina tom pelo resultado líquido dos atributos
+      const gains = [result.healthChange, result.honorChange, result.strengthChange, result.faithChange, result.moneyChange]
+        .filter((v): v is number => typeof v === 'number' && v > 0).length;
+      const losses = [result.healthChange, result.honorChange, result.strengthChange, result.faithChange, result.moneyChange]
+        .filter((v): v is number => typeof v === 'number' && v < 0).length;
+      if (gains > losses) AudioManager.success();
+      else if (losses > 0) AudioManager.negative();
     }
   };
 
@@ -1988,6 +2162,13 @@ function AppContent() {
   // === LOG DE EVENTOS POR ANO ===
   const addToEventLog = (text: string, type: 'neutral' | 'success' | 'fail') => {
     if (!character) return;
+    // Toca som apenas se o último som foi há mais de 350ms (evita pilha de sons)
+    const now = Date.now();
+    if (now - lastEventSoundAt.current > 350) {
+      lastEventSoundAt.current = now;
+      if (type === 'success') AudioManager.success();
+      else if (type === 'fail') AudioManager.negative();
+    }
     setCharacter((prev) => {
       if (!prev) return prev;
       const existingLog = prev.eventLog.find((log) => log.year === prev.currentYear);
@@ -3445,19 +3626,10 @@ function AppContent() {
     });
   };
 
-  // === RENDERIZAR BARRA DE STATUS ===
-  const renderStatusBar = (label: string, value: number, color: string) => {
-    const barColor = value <= 30 ? COLORS.feedback.error : color;
-    return (
-      <View style={styles.statusBar}>
-        <Text style={styles.statusLabel}>{label}</Text>
-        <View style={styles.barContainer}>
-          <View style={[styles.barFill, { width: `${value}%`, backgroundColor: barColor }]} />
-        </View>
-        <Text style={styles.statusValue}>{value}%</Text>
-      </View>
-    );
-  };
+  // renderStatusBar is now a thin wrapper around the animated StatBar component
+  const renderStatusBar = (label: string, value: number, _color: string) => (
+    <StatBar key={label} label={label} value={value} />
+  );
 
   const isSheetOpen = currentView !== 'DASHBOARD';
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
@@ -3547,7 +3719,7 @@ function AppContent() {
 
   return (
     <View style={[styles.container, character.health <= 30 && styles.hungerBorder]}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
 
 
@@ -3559,15 +3731,18 @@ function AppContent() {
               {character.name} {character.surname}
             </Text>
             <Text style={styles.headerInfo}>
-              Idade: {character.age} anos | Ano: {character.currentYear}
+              🎂 {character.age} anos  •  🗓️ {character.currentYear}
             </Text>
             <Text style={styles.headerLocation}>
-              📍 {character.location} | ⚡ {currentEra?.name || 'Era Desconhecida'}
+              📍 {character.location}  •  ⚡ {currentEra?.name || 'Era Desconhecida'}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={styles.headerMoney}>
-                💰 ${character.money} | 🍖 {character.food}
-              </Text>
+            <View style={styles.headerPillsRow}>
+              <View style={styles.moneyPill}>
+                <Text style={styles.moneyPillText}>💰 ${character.money}</Text>
+              </View>
+              <View style={styles.moneyPill}>
+                <Text style={styles.moneyPillText}>🍖 {character.food}</Text>
+              </View>
               {__DEV__ && (
                 <TouchableOpacity
                   onPress={() => setCharacter(prev => prev ? {
@@ -3582,7 +3757,7 @@ function AppContent() {
                     devForcePregnancy: true,
                   } : prev)}
                 >
-                  <Text style={{ fontSize: 10, color: COLORS.accent.gold, opacity: 0.5 }}>[ DEV: Age 20 + Stats ]</Text>
+                  <Text style={{ fontSize: 10, color: '#FFFFFF', opacity: 0.6 }}>[ DEV: Age 20 + Stats ]</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -3621,16 +3796,12 @@ function AppContent() {
               if (entry.includes('Idade:') || entry.includes('Ano:')) {
                 return (
                   <View key={index}>
-                    <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.15)', marginVertical: 12, width: '100%' }} />
-                    <Text style={[styles.logText, { fontWeight: 'bold', color: '#e8d5a3' }]}>{entry}</Text>
+                    <View style={{ height: 1, backgroundColor: COLORS.ui.divider, marginVertical: 12, width: '100%' }} />
+                    <AnimatedLogEntry text={entry} bold accent />
                   </View>
                 );
               }
-              return (
-                <Text key={index} style={styles.logText}>
-                  {entry}
-                </Text>
-              );
+              return <AnimatedLogEntry key={index} text={entry} />;
             })}
           </ScrollView>
 
@@ -4295,13 +4466,21 @@ export default function App() {
 }
 
 // === ESTILOS ===
+const CARD_SHADOW = {
+  shadowColor: COLORS.ui.shadow,
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.07,
+  shadowRadius: 12,
+  elevation: 3,
+} as const;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background.primary,
-    padding: 20,
+    padding: 16,
     paddingTop: 50,
-    paddingBottom: 80,
+    paddingBottom: 90,
   },
   sheetOverlay: {
     position: 'absolute',
@@ -4314,16 +4493,19 @@ const styles = StyleSheet.create({
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(15, 26, 43, 0.35)',
   },
   sheetContainer: {
     height: '88%',
     backgroundColor: COLORS.background.primary,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.background.tertiary,
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 16,
   },
   sheetBody: {
     flex: 1,
@@ -4341,139 +4523,188 @@ const styles = StyleSheet.create({
     marginTop: 100,
   },
   header: {
-    marginBottom: 15,
+    marginBottom: 14,
+    backgroundColor: COLORS.accent.gold,
+    borderRadius: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    shadowColor: COLORS.accent.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   headerName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   headerInfo: {
     fontSize: 13,
-    color: COLORS.text.secondary,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    marginTop: 3,
+    marginTop: 4,
   },
   headerLocation: {
     fontSize: 12,
-    color: COLORS.text.highlight,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
     textAlign: 'center',
     marginTop: 3,
   },
+  headerPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  moneyPill: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  moneyPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   headerMoney: {
     fontSize: 14,
-    color: COLORS.text.primary,
+    color: '#FFFFFF',
     textAlign: 'center',
     marginTop: 3,
   },
   avatarArea: {
     alignItems: 'center',
-    marginVertical: 15,
-    padding: 15,
+    marginBottom: 14,
+    padding: 16,
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 24,
+    ...CARD_SHADOW,
   },
   avatarPlaceholder: {
-    fontSize: 60,
+    fontSize: 56,
   },
   avatarAge: {
-    fontSize: 12,
-    color: COLORS.text.secondary,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text.primary,
     marginTop: 8,
   },
   avatarDescription: {
-    fontSize: 10,
+    fontSize: 11,
     color: COLORS.text.secondary,
     marginTop: 4,
-    fontStyle: 'italic',
   },
   statusSection: {
-    marginBottom: 15,
+    marginBottom: 14,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    ...CARD_SHADOW,
   },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   statusLabel: {
     color: COLORS.text.primary,
     fontSize: 13,
-    width: 100,
+    fontWeight: '700',
+    width: 104,
   },
   barContainer: {
     flex: 1,
-    height: 18,
+    height: 20,
     backgroundColor: COLORS.background.tertiary,
-    borderRadius: 10,
+    borderRadius: 999,
     overflow: 'hidden',
     marginHorizontal: 8,
   },
   barFill: {
     height: '100%',
-    borderRadius: 10,
+    borderRadius: 999,
   },
   statusValue: {
-    color: COLORS.text.secondary,
-    fontSize: 11,
-    width: 35,
+    fontSize: 12,
+    fontWeight: '800',
+    width: 40,
     textAlign: 'right',
   },
   logSection: {
     flex: 1,
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 15,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 14,
+    ...CARD_SHADOW,
   },
   logText: {
-    color: COLORS.text.primary,
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 3,
+    color: COLORS.text.highlight,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 4,
   },
   eventChoices: {
     marginBottom: 10,
   },
   choiceButton: {
-    backgroundColor: COLORS.accent.bronze,
-    padding: 14,
-    borderRadius: 8,
+    backgroundColor: COLORS.accent.gold,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 999,
     marginBottom: 8,
+    shadowColor: COLORS.accent.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   choiceText: {
-    color: COLORS.text.primary,
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   choicePreview: {
-    color: COLORS.text.secondary,
+    color: 'rgba(255,255,255,0.85)',
     fontSize: 11,
+    fontWeight: '600',
     textAlign: 'center',
-    fontStyle: 'italic',
   },
   ageButton: {
-    backgroundColor: COLORS.accent.gold,
+    backgroundColor: COLORS.ui.pillGreen,
     padding: 16,
-    borderRadius: 10,
+    borderRadius: 999,
     alignItems: 'center',
     marginBottom: 8,
+    shadowColor: COLORS.ui.pillGreen,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
   },
   ageButtonText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.background.primary,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   hungerWarning: {
     backgroundColor: COLORS.feedback.error,
-    padding: 8,
-    borderRadius: 5,
+    padding: 10,
+    borderRadius: 999,
     alignItems: 'center',
   },
   hungerWarningText: {
-    color: COLORS.text.primary,
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 11,
   },
@@ -4482,13 +4713,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 24,
     padding: 20,
+    ...CARD_SHADOW,
   },
   placeholderTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
+    fontWeight: '800',
+    color: COLORS.text.primary,
     marginBottom: 16,
   },
   placeholderText: {
@@ -4500,13 +4732,13 @@ const styles = StyleSheet.create({
   backButton: {
     backgroundColor: COLORS.accent.gold,
     paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
+    paddingHorizontal: 22,
+    borderRadius: 999,
     marginBottom: 15,
     alignSelf: 'flex-start',
   },
   backButtonText: {
-    color: COLORS.background.primary,
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -4515,9 +4747,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   activitiesTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text.primary,
     textAlign: 'center',
     marginBottom: 4,
   },
@@ -4532,10 +4764,9 @@ const styles = StyleSheet.create({
   },
   activityCard: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
+    ...CARD_SHADOW,
   },
   activityHeader: {
     flexDirection: 'row',
@@ -4545,7 +4776,7 @@ const styles = StyleSheet.create({
   },
   activityLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   activityCheck: {
@@ -4555,24 +4786,24 @@ const styles = StyleSheet.create({
   },
   activityDesc: {
     fontSize: 13,
+    fontWeight: '600',
     color: COLORS.accent.gold,
   },
   categoryCard: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 18,
     padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    ...CARD_SHADOW,
   },
   categoryCardDisabled: {
     opacity: 0.5,
   },
   categoryLabel: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   categoryChevron: {
@@ -4582,22 +4813,20 @@ const styles = StyleSheet.create({
   },
   quitDivider: {
     height: 1,
-    backgroundColor: COLORS.background.tertiary,
+    backgroundColor: COLORS.ui.divider,
     marginVertical: 4,
   },
   quitCard: {
-    backgroundColor: 'rgba(161, 58, 47, 0.12)',
-    borderRadius: 10,
+    backgroundColor: COLORS.ui.tintRed,
+    borderRadius: 18,
     padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.feedback.error,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   quitLabel: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: COLORS.feedback.error,
   },
   quitChevron: {
@@ -4611,31 +4840,28 @@ const styles = StyleSheet.create({
   categoryBackText: {
     fontSize: 14,
     color: COLORS.accent.gold,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   // === LOVE TAB ===
   loveStatusBadge: {
     alignSelf: 'center',
-    backgroundColor: COLORS.background.secondary,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
+    backgroundColor: COLORS.ui.tintBlue,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 7,
     marginBottom: 20,
   },
   loveStatusText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.accent.gold,
   },
   lovePartnerBox: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 18,
     padding: 20,
-    borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
     alignItems: 'center',
+    ...CARD_SHADOW,
   },
   lovePartnerText: {
     fontSize: 14,
@@ -4645,9 +4871,9 @@ const styles = StyleSheet.create({
   },
   // === LOVE SECTION ===
   loveSectionHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#b89a5a',
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.text.secondary,
     marginTop: 16,
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -4677,32 +4903,34 @@ const styles = StyleSheet.create({
   },
   partnerCard: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.accent.bronze,
     marginTop: 8,
+    ...CARD_SHADOW,
   },
   // === POTENTIAL MATCH MODAL ===
   matchOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.82)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   matchCard: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 16,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
     padding: 24,
     width: '100%',
-    borderWidth: 1,
-    borderColor: '#b89a5a',
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
   },
   matchHeader: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#e8d5a3',
+    color: COLORS.text.primary,
     textAlign: 'center',
     marginBottom: 18,
   },
@@ -4715,16 +4943,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2a3e',
+    borderBottomColor: COLORS.ui.divider,
   },
   matchInfoLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#888',
+    color: COLORS.text.secondary,
   },
   matchInfoValue: {
     fontSize: 13,
-    color: '#e8d5a3',
+    color: COLORS.text.primary,
     fontWeight: '600',
   },
   matchStatsSection: {
@@ -4738,55 +4966,57 @@ const styles = StyleSheet.create({
   },
   matchStatLabel: {
     fontSize: 12,
-    color: '#aaa',
+    fontWeight: '600',
+    color: COLORS.text.secondary,
     width: 68,
   },
   matchStatBarBg: {
     flex: 1,
     height: 10,
-    backgroundColor: '#2a2a3e',
-    borderRadius: 5,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
     overflow: 'hidden',
   },
   matchStatBarFill: {
     height: '100%',
-    borderRadius: 5,
+    borderRadius: 999,
   },
   matchBtnCourt: {
-    backgroundColor: '#2a4a8a',
-    borderRadius: 10,
+    backgroundColor: COLORS.accent.gold,
+    borderRadius: 999,
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#4a7abf',
+    shadowColor: COLORS.accent.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   matchBtnCourtText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
   matchBtnPass: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 10,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
     paddingVertical: 13,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#444',
   },
   matchBtnPassText: {
-    color: '#888',
+    color: COLORS.text.secondary,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   // === ASSETS ===
   assetsScreen: {
     flex: 1,
   },
   assetsTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.accent.gold,
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text.primary,
     textAlign: 'center',
     marginBottom: 4,
   },
@@ -4810,36 +5040,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   assetsCategoryTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.accent.gold,
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     marginBottom: 10,
     marginTop: 4,
   },
   assetCard: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    ...CARD_SHADOW,
   },
   assetName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   assetType: {
     fontSize: 12,
     color: COLORS.text.secondary,
-    fontStyle: 'italic',
   },
   assetFoodCard: {
     backgroundColor: COLORS.background.secondary,
-    borderRadius: 10,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 8,
+    ...CARD_SHADOW,
   },
   assetFoodInfo: {
     marginBottom: 10,
@@ -4850,21 +5083,21 @@ const styles = StyleSheet.create({
   },
   assetActionBtn: {
     flex: 1,
-    backgroundColor: '#4ade80',
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: COLORS.ui.pillGreen,
+    paddingVertical: 9,
+    borderRadius: 999,
     alignItems: 'center',
   },
   assetActionBtnSell: {
     flex: 1,
-    backgroundColor: COLORS.accent.bronze,
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: COLORS.accent.amber,
+    paddingVertical: 9,
+    borderRadius: 999,
     alignItems: 'center',
   },
   assetActionText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#1a1a2e',
+    color: '#FFFFFF',
   },
 });

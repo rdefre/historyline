@@ -21,6 +21,8 @@ export interface Child {
   health: number;
   isBaptized: boolean;
   profession?: string;
+  isDead?: boolean;
+  deathAge?: number;
 }
 
 // === PERSONAGEM ===
@@ -53,6 +55,8 @@ export interface Character {
     occupation: string;
     relationship: number; // 0-100 (was relationshipLevel)
     stats: { vitality: number; strength: number; honor: number; wealth: number };
+    isDead?: boolean;
+    deathAge?: number;
   } | null; // Par romântico
   hasSyphilis?: boolean;
   birthControlActive?: boolean;

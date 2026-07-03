@@ -5,6 +5,34 @@ export interface Stats {
   reputation: number;
 }
 
+export interface Child {
+  id: string;
+  name: string;
+  age: number;
+  gender: 'male' | 'female';
+  isDead?: boolean;
+  deathAge?: number;
+}
+
+export interface Partner {
+  id: string;
+  name: string;
+  age: number;
+  gender: 'male' | 'female';
+  isDead?: boolean;
+  deathAge?: number;
+}
+
+export function npcDeathChance(age: number): number {
+  if (age >= 90) return 1.0;
+  if (age >= 80) return 0.20;
+  if (age >= 70) return 0.08;
+  if (age >= 60) return 0.04;
+  if (age >= 50) return 0.02;
+  if (age < 5) return 0.05;
+  return 0.01;
+}
+
 export interface Sibling {
   id: string;
   name: string;
@@ -40,6 +68,9 @@ export interface Character {
   currentEvent: GameEvent | null;
   siblings?: Sibling[];
   family?: Family;
+  children?: Child[];
+  partner?: Partner | null;
+  eventLog?: { year: number; entries: { text: string; emoji?: string; type: 'neutral' | 'danger' | 'success' | 'info' }[] }[];
 }
 
 export interface GameEvent {

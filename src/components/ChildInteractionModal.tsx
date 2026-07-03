@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import COLORS from '../constants/colors';
 import type { Child } from '../types/game.types';
 
 interface ChildInteractionModalProps {
@@ -26,7 +27,7 @@ export default function ChildInteractionModal({
 
   const age = Number(child.age);
   const childEmoji = child.gender === 'Masculino' ? '👦' : '👧';
-  const typeColor = child.type === 'Legítimo' ? '#c9a84c' : '#888';
+  const typeColor = child.type === 'Legítimo' ? COLORS.accent.gold : COLORS.text.secondary;
   const destinySealed = !!child.profession;
 
   if (age >= 16) {
@@ -205,16 +206,21 @@ function ActionBtn({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   container: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 14,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
     padding: 20,
     width: '88%',
     maxHeight: '80%',
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
   },
   closeBtn: {
     position: 'absolute',
@@ -223,7 +229,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   closeBtnText: {
-    color: '#888',
+    color: COLORS.text.secondary,
     fontSize: 18,
   },
   header: {
@@ -237,8 +243,8 @@ const styles = StyleSheet.create({
   },
   headerName: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#e8d5a3',
+    fontWeight: '800',
+    color: COLORS.text.primary,
   },
   headerType: {
     fontSize: 11,
@@ -249,12 +255,12 @@ const styles = StyleSheet.create({
   },
   headerSub: {
     fontSize: 12,
-    color: '#888',
+    color: COLORS.text.secondary,
     marginTop: 4,
   },
   statsCard: {
-    backgroundColor: '#16162a',
-    borderRadius: 10,
+    backgroundColor: COLORS.background.primary,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 14,
     gap: 10,
@@ -265,24 +271,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   barLabel: {
-    color: '#aaa',
+    color: COLORS.text.secondary,
     fontSize: 12,
+    fontWeight: '600',
     width: 110,
   },
   barTrack: {
     flex: 1,
-    height: 6,
-    backgroundColor: '#2a2a3e',
-    borderRadius: 3,
+    height: 8,
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 999,
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 999,
   },
   barValue: {
-    color: '#ccc',
+    color: COLORS.text.primary,
     fontSize: 11,
+    fontWeight: '700',
     width: 28,
     textAlign: 'right',
   },
@@ -298,44 +306,45 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   adultNoticeText: {
-    color: '#ccc',
+    color: COLORS.text.highlight,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
   },
   adultNoticeSubtext: {
-    color: '#666',
+    color: COLORS.text.disabled,
     fontSize: 12,
     textAlign: 'center',
   },
   actionBtn: {
-    backgroundColor: '#2a2a3e',
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#3a3a4e',
+    backgroundColor: COLORS.accent.bronze,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
   },
   actionBtnDanger: {
-    borderColor: '#a13a2f',
-    backgroundColor: 'rgba(161,58,47,0.15)',
+    backgroundColor: COLORS.ui.tintRed,
   },
   actionBtnMuted: {
     opacity: 0.5,
   },
   actionLabel: {
-    color: '#e8d5a3',
-    fontWeight: '600',
+    color: COLORS.accent.gold,
+    fontWeight: '700',
     fontSize: 14,
     marginBottom: 2,
+    textAlign: 'center',
   },
   actionLabelDanger: {
-    color: '#ef4444',
+    color: COLORS.feedback.error,
   },
   actionSublabel: {
-    color: '#888',
+    color: COLORS.text.secondary,
     fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   actionSublabelDanger: {
-    color: '#a13a2f',
+    color: COLORS.feedback.error,
   },
 });

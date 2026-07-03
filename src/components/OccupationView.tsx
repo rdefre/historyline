@@ -953,11 +953,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   categoryCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#E7EBF2',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#E7EBF2',
     alignSelf: 'flex-start',
     borderRadius: 20,
   },
@@ -1108,7 +1108,7 @@ const styles = StyleSheet.create({
   relationshipBarOuter: {
     flex: 1,
     height: 12,
-    backgroundColor: '#2a2a3e',
+    backgroundColor: '#EDF0F5',
     borderRadius: 6,
     overflow: 'hidden',
     marginRight: 8,
@@ -1270,7 +1270,7 @@ const styles = StyleSheet.create({
   // ========== COLLEAGUE INTERACTION MODAL ==========
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: 'rgba(15, 26, 43, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1350,7 +1350,7 @@ const styles = StyleSheet.create({
   },
   modalRelationshipBar: {
     height: 16,
-    backgroundColor: '#2a2a3e',
+    backgroundColor: '#EDF0F5',
     borderRadius: 8,
     overflow: 'hidden',
     marginBottom: 6,
@@ -1385,7 +1385,7 @@ const styles = StyleSheet.create({
   },
   modalStatBar: {
     height: 10,
-    backgroundColor: '#2a2a3e',
+    backgroundColor: '#EDF0F5',
     borderRadius: 5,
     overflow: 'hidden',
     marginBottom: 4,

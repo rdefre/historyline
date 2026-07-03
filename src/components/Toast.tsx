@@ -28,7 +28,7 @@ export function Toast({ message, type }: ToastProps) {
   }, [fadeAnim]);
 
   const backgroundColor =
-    type === 'success' ? '#4ade80' : type === 'fail' ? '#ef4444' : '#888888';
+    type === 'success' ? '#2ECC71' : type === 'fail' ? '#EF4444' : '#7A8494';
 
   return (
     <Animated.View

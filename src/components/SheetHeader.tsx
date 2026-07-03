@@ -20,7 +20,7 @@ export default function SheetHeader({ title, onClose, onBack }: SheetHeaderProps
               onPress={onBack}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.backIcon}>{'<'}</Text>
+              <Text style={styles.backIcon}>{'‹'}</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.sideSpacer} />
@@ -37,7 +37,7 @@ export default function SheetHeader({ title, onClose, onBack }: SheetHeaderProps
             onPress={onClose}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.closeIcon}>x</Text>
+            <Text style={styles.closeIcon}>✕</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -51,14 +51,14 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 16,
     backgroundColor: COLORS.background.primary,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   dragIndicator: {
-    width: 36,
+    width: 40,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: COLORS.text.disabled,
     alignSelf: 'center',
     marginBottom: 12,
   },
@@ -74,22 +74,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sideSpacer: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
   },
   title: {
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '800',
     color: COLORS.text.primary,
     textAlign: 'center',
     letterSpacing: 0.3,
   },
   backButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(212,175,55,0.16)',
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: COLORS.ui.tintBlue,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -100,16 +100,16 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: COLORS.background.tertiary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeIcon: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.secondary,
   },
 });

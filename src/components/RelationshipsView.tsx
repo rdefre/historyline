@@ -630,39 +630,44 @@ export default function RelationshipsView({
             <View style={styles.sectionDivider} />
             <Text style={[styles.sectionTitle, { color: '#d46a8a' }]}>❤️ Companheiro(a)</Text>
             <TouchableOpacity
-              style={styles.card}
-              activeOpacity={0.8}
-              onPress={() => setShowPartnerModal(true)}
+              style={[styles.card, character.partner.isDead && { opacity: 0.5 }]}
+              activeOpacity={character.partner.isDead ? 1 : 0.8}
+              onPress={() => { if (!character.partner?.isDead) setShowPartnerModal(true); }}
+              disabled={!!character.partner.isDead}
             >
               <View style={styles.cardHeader}>
-                <Text style={styles.cardName}>
-                  {(character.partner.gender === 'Feminino' ? '👩' : '👨') + ' ' + character.partner.name}
+                <Text style={[styles.cardName, character.partner.isDead && { textDecorationLine: 'line-through', color: '#B9C2CE' }]}>
+                  {(character.partner.isDead ? '🪦' : character.partner.gender === 'Feminino' ? '👩' : '👨') + ' ' + character.partner.name}
                 </Text>
-                <Text style={[styles.cardRole, { color: COLORS.accent.gold }]}>
-                  {character.partner.status}
-                </Text>
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardAge}>{character.partner.age} anos</Text>
-                <Text style={[styles.cardOccupation, { fontStyle: 'italic' }]}>
-                  {character.partner.occupation}
+                <Text style={[styles.cardRole, { color: character.partner.isDead ? '#e74c3c' : COLORS.accent.gold }]}>
+                  {character.partner.isDead ? `Falecido(a) aos ${character.partner.deathAge} anos` : character.partner.status}
                 </Text>
               </View>
-              <View style={styles.relationshipContainer}>
-                <Text style={styles.relationshipLabel}>Relação:</Text>
-                <View style={styles.relationshipBarBg}>
-                  <View
-                    style={[
-                      styles.relationshipBarFill,
-                      {
-                        width: `${character.partner.relationship}%` as `${number}%`,
-                        backgroundColor: '#d46a8a',
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.relationshipValue}>{character.partner.relationship}%</Text>
-              </View>
+              {!character.partner.isDead && (
+                <>
+                  <View style={styles.cardInfo}>
+                    <Text style={styles.cardAge}>{character.partner.age} anos</Text>
+                    <Text style={[styles.cardOccupation, { fontStyle: 'italic' }]}>
+                      {character.partner.occupation}
+                    </Text>
+                  </View>
+                  <View style={styles.relationshipContainer}>
+                    <Text style={styles.relationshipLabel}>Relação:</Text>
+                    <View style={styles.relationshipBarBg}>
+                      <View
+                        style={[
+                          styles.relationshipBarFill,
+                          {
+                            width: `${character.partner.relationship}%` as `${number}%`,
+                            backgroundColor: '#d46a8a',
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.relationshipValue}>{character.partner.relationship}%</Text>
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
           </>
         )}
@@ -673,13 +678,19 @@ export default function RelationshipsView({
             <View style={styles.sectionDivider} />
             <Text style={[styles.sectionTitle, { color: '#7ecec4' }]}>👶 Filhos</Text>
             {(character.children ?? []).map((child) => (
-              <TouchableOpacity key={child.id} style={styles.card} onPress={() => setSelectedChild(child)} activeOpacity={0.75}>
+              <TouchableOpacity
+                key={child.id}
+                style={[styles.card, child.isDead && { opacity: 0.5 }]}
+                onPress={() => { if (!child.isDead) setSelectedChild(child); }}
+                activeOpacity={child.isDead ? 1 : 0.75}
+                disabled={!!child.isDead}
+              >
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardName}>
-                    {child.gender === 'Masculino' ? '👦' : '👧'} {child.name}
+                  <Text style={[styles.cardName, child.isDead && { textDecorationLine: 'line-through', color: '#B9C2CE' }]}>
+                    {child.isDead ? '🪦' : child.gender === 'Masculino' ? '👦' : '👧'} {child.name}
                   </Text>
-                  <Text style={[styles.cardRole, { color: child.type === 'Legítimo' ? COLORS.accent.gold : '#aaa' }]}>
-                    {child.type}
+                  <Text style={[styles.cardRole, { color: child.isDead ? '#e74c3c' : child.type === 'Legítimo' ? COLORS.accent.gold : '#aaa' }]}>
+                    {child.isDead ? `Falecido(a) aos ${child.deathAge} anos` : child.type}
                   </Text>
                 </View>
                 <Text style={styles.cardAge}>{child.age} {child.age === 1 ? 'ano' : 'anos'}</Text>
@@ -1209,7 +1220,7 @@ const styles = StyleSheet.create({
   // ── Modals ────────────────────────────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1379,7 +1390,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   partnerActionBtn: {
-    backgroundColor: '#1e1e2e',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#c9a84c',
     borderRadius: 10,
@@ -1388,12 +1399,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   partnerActionBtnText: {
-    color: '#e8d5a3',
+    color: '#1F2430',
     fontSize: 14,
     fontWeight: '600',
   },
   partnerActionBtnSub: {
-    color: '#888',
+    color: '#7A8494',
     fontSize: 11,
     marginTop: 2,
   },

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import COLORS from '../constants/colors';
 import type { PendingPregnancy } from '../types/game.types';
 
 interface BirthModalProps {
@@ -29,14 +30,14 @@ export default function BirthModal({ pregnancy, onNameChosen }: BirthModalProps)
         <View style={styles.container}>
           <Text style={styles.emoji}>👶</Text>
           <Text style={styles.title}>Um bebê nasceu!</Text>
-          <Text style={[styles.typeLabel, { color: pregnancy.type === 'Legítimo' ? '#c9a84c' : '#aaa' }]}>
+          <Text style={[styles.typeLabel, { color: pregnancy.type === 'Legítimo' ? COLORS.accent.gold : COLORS.text.secondary }]}>
             {pregnancy.type}
           </Text>
           <Text style={styles.description}>{description}</Text>
           <TextInput
             style={styles.input}
             placeholder="Nome da criança..."
-            placeholderTextColor="#666"
+            placeholderTextColor={COLORS.text.disabled}
             value={name}
             onChangeText={setName}
             maxLength={30}
@@ -54,25 +55,30 @@ export default function BirthModal({ pregnancy, onNameChosen }: BirthModalProps)
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   container: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 14,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 24,
     padding: 28,
     width: '85%',
     alignItems: 'center',
+    shadowColor: COLORS.ui.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
   },
   emoji: {
-    fontSize: 40,
+    fontSize: 44,
     marginBottom: 8,
   },
   title: {
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#e8d5a3',
+    fontWeight: '800',
+    color: COLORS.text.primary,
     marginBottom: 6,
   },
   typeLabel: {
@@ -84,33 +90,38 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 13,
-    color: '#bbb',
+    color: COLORS.text.secondary,
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 20,
   },
   input: {
-    backgroundColor: '#2a2a3e',
-    color: '#fff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#c9a84c',
-    paddingHorizontal: 14,
+    backgroundColor: COLORS.background.primary,
+    color: COLORS.text.primary,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: COLORS.background.tertiary,
+    paddingHorizontal: 18,
     paddingVertical: 10,
     fontSize: 16,
     width: '100%',
     marginBottom: 20,
   },
   btn: {
-    backgroundColor: '#c9a84c',
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: COLORS.accent.gold,
+    borderRadius: 999,
+    paddingVertical: 13,
     paddingHorizontal: 32,
     width: '100%',
     alignItems: 'center',
+    shadowColor: COLORS.accent.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   btnText: {
-    color: '#1a1a2e',
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 15,
   },

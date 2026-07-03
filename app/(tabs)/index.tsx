@@ -2,14 +2,18 @@ import { eventsUk1500 } from '@/constants/events-uk-1500';
 import {
   createNewCharacter,
   getCurrentEra,
+  npcDeathChance,
   processYear,
   randomInt,
   type Character,
+  type Child,
   type GameEvent,
+  type Partner,
 } from '@/constants/game-data';
 import { HistoryLineTheme as T } from '@/constants/theme';
 import type { EventChoice, InteractiveEvent, QueuedEvent } from '@/constants/types';
 import { EventPopup } from '@/components/EventPopup';
+import { RelationshipsView } from '@/components/RelationshipsView';
 import { useEffect, useRef, useState } from 'react';
 import { Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -222,6 +226,12 @@ export default function HomeScreen() {
   // Ref para carregar dados de nascimento de irmão entre handleAgeUp e applyYearResult/handleEventChoice
   const pendingSiblingRef = useRef<{ sibling: any; birthEntry: { text: string; type: 'success' } } | null>(null);
 
+  // Ref para NPC mortality updates (filhos e parceiro)
+  const pendingNpcRef = useRef<{ children: Child[]; partner: Partner | null; npcEvents: GameEvent[] } | null>(null);
+
+  // Modal de relações
+  const [showRelationsModal, setShowRelationsModal] = useState(false);
+
   // Drain event queue one at a time
   useEffect(() => {
     console.log('QUEUE EFFECT - queueLen:', eventQueue.length, 'current:', currentQueuedEvent?.type ?? 'null', 'hasPending:', !!pendingYearResult.current);
@@ -269,6 +279,60 @@ export default function HomeScreen() {
     const newAge = result.newAge;
 
     pendingYearResult.current = result;
+
+    // === NPC MORTALITY ===
+    const npcEvents: GameEvent[] = [];
+    const npcYear = result.newYear;
+    const npcAge = result.newAge;
+
+    // Envelhece e rola morte para cada filho vivo
+    const updatedChildren: Child[] = (character.children || []).map(child => {
+      if (child.isDead) return child;
+      const childNewAge = child.age + 1;
+      if (Math.random() < npcDeathChance(childNewAge)) {
+        npcEvents.push({ emoji: '💀', text: `Seu filho(a) ${child.name} faleceu aos ${childNewAge} anos.`, age: npcAge, year: npcYear });
+        return { ...child, age: childNewAge, isDead: true, deathAge: childNewAge };
+      }
+      return { ...child, age: childNewAge };
+    });
+
+    // Envelhece e rola morte para o parceiro
+    let updatedPartner: Partner | null = character.partner
+      ? { ...character.partner, age: character.partner.age + 1 }
+      : null;
+    if (updatedPartner && !updatedPartner.isDead) {
+      if (Math.random() < npcDeathChance(updatedPartner.age)) {
+        npcEvents.push({ emoji: '💔', text: `Seu parceiro(a) ${updatedPartner.name} faleceu aos ${updatedPartner.age} anos.`, age: npcAge, year: npcYear });
+        updatedPartner = { ...updatedPartner, isDead: true, deathAge: updatedPartner.age };
+      }
+    }
+
+    // Geração de parceiro (se não tiver, entre 18-30 anos, 30% de chance)
+    if (!updatedPartner && npcAge >= 18 && npcAge <= 30 && Math.random() < 0.30) {
+      const partnerGender: 'male' | 'female' = character.gender === 'male' ? 'female' : 'male';
+      const currentEra = getCurrentEra(npcYear);
+      const lastName = character.name.split(' ').slice(1).join(' ');
+      const firstName = currentEra.firstNames[Math.floor(Math.random() * currentEra.firstNames.length)];
+      updatedPartner = {
+        id: `partner_${Date.now()}`,
+        name: `${firstName} ${lastName}`,
+        age: npcAge + randomInt(-3, 5),
+        gender: partnerGender,
+      };
+      npcEvents.push({ emoji: '💍', text: `Você se casou com ${updatedPartner.name}!`, age: npcAge, year: npcYear });
+    }
+
+    // Nascimento de filho (se tiver parceiro vivo, 18-45 anos, 25% de chance)
+    if (updatedPartner && !updatedPartner.isDead && npcAge >= 18 && npcAge <= 45 && Math.random() < 0.25) {
+      const isBoy = Math.random() > 0.5;
+      const currentEra = getCurrentEra(npcYear);
+      const childName = currentEra.firstNames[Math.floor(Math.random() * currentEra.firstNames.length)];
+      const newChild: Child = { id: `child_${Date.now()}`, name: childName, age: 0, gender: isBoy ? 'male' : 'female' };
+      updatedChildren.push(newChild);
+      npcEvents.push({ emoji: '👶', text: `Você teve um filho(a): ${childName}!`, age: npcAge, year: npcYear });
+    }
+
+    pendingNpcRef.current = { children: updatedChildren, partner: updatedPartner, npcEvents };
 
     const queue: QueuedEvent[] = [];
 
@@ -345,9 +409,12 @@ export default function HomeScreen() {
       });
     }
 
-    // Merge tudo em um único setCharacter (inclui nascimento de irmão se houver)
+    // Merge tudo em um único setCharacter (inclui nascimento de irmão e NPC updates se houver)
     const siblingData = pendingSiblingRef.current;
     pendingSiblingRef.current = null;
+
+    const npcData = pendingNpcRef.current;
+    pendingNpcRef.current = null;
 
     setCharacter(prev => {
       const updated: any = {
@@ -357,6 +424,8 @@ export default function HomeScreen() {
         alive: !result.died && modifiedStats.health > 0,
         job: result.job,
         stats: modifiedStats,
+        children: npcData?.children ?? prev.children ?? [],
+        partner: npcData !== null ? npcData.partner : (prev.partner ?? null),
       };
 
       if (siblingData) {
@@ -394,6 +463,23 @@ export default function HomeScreen() {
         setSuccessionRelatives(relatives);
         setShowSuccessionPopup(true);
       }
+    }
+
+    // Adiciona eventos NPC ao eventLog do personagem
+    if (npcData?.npcEvents.length) {
+      setCharacter(prev => {
+        const currentLog = (prev as any).eventLog || [];
+        const existing = currentLog.find((log: any) => log.year === result.newYear);
+        const newEntries = npcData.npcEvents.map(e => ({ text: e.text, emoji: e.emoji, type: 'info' as const }));
+        const updatedLog = existing
+          ? currentLog.map((log: any) =>
+              log.year === result.newYear
+                ? { ...log, entries: [...log.entries, ...newEntries] }
+                : log
+            )
+          : [...currentLog, { year: result.newYear, entries: newEntries }];
+        return { ...prev, eventLog: updatedLog } as any;
+      });
     }
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -504,16 +590,25 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* === BOTÃO PRINCIPAL (CORRIGIDO) === */}
+      {/* === BOTÃO PRINCIPAL === */}
       <View style={styles.actionContainer}>
         {character.alive ? (
-          <TouchableOpacity 
-            style={styles.ageUpButton} 
-            activeOpacity={0.8} 
-            onPress={handleAgeUp}
-          >
-            <Text style={styles.ageUpButtonText}>+ Próximo Ano</Text>
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.ageUpButton}
+              activeOpacity={0.8}
+              onPress={handleAgeUp}
+            >
+              <Text style={styles.ageUpButtonText}>+ Próximo Ano</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.relationsButton}
+              activeOpacity={0.8}
+              onPress={() => setShowRelationsModal(true)}
+            >
+              <Text style={styles.relationsButtonText}>👥</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.deadContainer}>
             <Text style={styles.deathTitle}>Você Morreu</Text>
@@ -541,7 +636,7 @@ export default function HomeScreen() {
           contentContainerStyle={styles.logContent}
           showsVerticalScrollIndicator={false}
         >
-          {character.eventLog.slice().reverse().map((yearLog, yIndex) => (
+          {(character.eventLog ?? []).slice().reverse().map((yearLog, yIndex) => (
             <View key={yIndex} style={styles.yearBlock}>
               <Text style={styles.yearLabel}>Ano {yearLog.year}</Text>
               {yearLog.entries.map((entry, eIndex) => (
@@ -570,11 +665,39 @@ export default function HomeScreen() {
       {/* MODAL DE SUCESSÃO (SE HOUVER) */}
       {showSuccessionPopup && (
         <SuccessionPopup
-          relatives={character.siblings || []}
-          onSelect={handleSuccession}
+          visible={showSuccessionPopup}
+          deceased={character}
+          relatives={successionRelatives}
+          onSelectRelative={handleSelectRelative}
           onNewLife={handleNewLife}
         />
       )}
+
+      {/* MODAL DE RELAÇÕES */}
+      <Modal
+        visible={showRelationsModal}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setShowRelationsModal(false)}
+      >
+        <View style={styles.relationsOverlay}>
+          <View style={styles.relationsCard}>
+            <Text style={styles.relationsTitle}>👥 Relações</Text>
+            <RelationshipsView
+              partner={character.partner}
+              children={character.children || []}
+            />
+            <TouchableOpacity
+              style={styles.relationsClose}
+              activeOpacity={0.8}
+              onPress={() => setShowRelationsModal(false)}
+            >
+              <Text style={styles.relationsCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -911,5 +1034,107 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: T.parchment,
     textDecorationLine: 'underline',
+  },
+
+  // === ACTION ROW ===
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  relationsButton: {
+    backgroundColor: T.blueRoyal,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: T.gold,
+  },
+  relationsButtonText: {
+    fontSize: 20,
+  },
+
+  // === MODAL DE RELAÇÕES ===
+  relationsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'flex-end',
+  },
+  relationsCard: {
+    backgroundColor: T.blueRoyal,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 36,
+    borderTopWidth: 2,
+    borderColor: T.gold,
+    maxHeight: '70%',
+  },
+  relationsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: T.goldLight,
+    marginBottom: 16,
+  },
+  relationsClose: {
+    marginTop: 20,
+    backgroundColor: T.navyDark,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  relationsCloseText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: T.parchment,
+  },
+
+  // === HEADER ===
+  header: {
+    backgroundColor: T.blueRoyal,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  actionContainer: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    backgroundColor: T.navyDark,
+  },
+  deadContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+
+  // === EVENT LOG STYLES ===
+  yearBlock: {
+    marginBottom: 12,
+  },
+  yearLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: T.gold,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  logEntry: {
+    fontSize: 13,
+    color: T.parchment,
+    lineHeight: 18,
+    paddingVertical: 2,
+  },
+  logDanger: {
+    color: '#e74c3c',
+  },
+  logSuccess: {
+    color: '#2ecc71',
+  },
+  logInfo: {
+    color: T.goldLight,
   },
 });

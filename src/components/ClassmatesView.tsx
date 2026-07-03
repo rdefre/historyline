@@ -115,7 +115,7 @@ export default function ClassmatesView({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(15, 26, 43, 0.55)',
     justifyContent: 'flex-end',
   },
   modalContent: {
